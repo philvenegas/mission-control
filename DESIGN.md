@@ -278,7 +278,7 @@ REST over JSON, prefix `/v1`. No organisation identifier appears in any path.
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /auth/login`, `GET /me` |
+| Auth | `POST /auth/login`, `GET /me`, `GET /health` (no login needed) |
 | Organisation | `GET /org`; `PATCH /org/settings` *(designed, not built)* |
 | Skills | `GET /skills` (the taxonomy is seeded) |
 | Crew | `GET /crew`, `POST /crew`, `GET /crew/:ref`, `PATCH /crew/:ref`, `PUT /crew/:ref/skills/:skill`, `DELETE /crew/:ref/skills/:skill` |
@@ -376,7 +376,7 @@ mctl mission list --profile helios         # only Helios's missions
 mctl crew list --profile helios            # only Helios's crew, with its own skill names
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl profile list|use`, `mctl logout`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl status`, `mctl profile list|use`, `mctl logout`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
 
 ### What `mctl match run` prints
 
@@ -443,6 +443,9 @@ packages/
     src/commands/   one file per noun
     src/output/     table, JSON and error rendering
 docker-compose.yml  Postgres
+bin/mctl            wrapper that runs the built CLI
+scripts/            demo:setup, demo:login, demo:reset
+transcripts/        unedited AI transcripts
 ```
 
 Libraries: Hono (HTTP), Drizzle with `postgres` (data access and migrations), Zod (schemas), Commander (CLI), Vitest (tests). pnpm workspaces.
@@ -457,6 +460,36 @@ Rules for whoever writes the code, human or agent:
 6. Any new table gets `org_id`, a composite foreign key and, once the stretch step is done, a row-level security policy. Any new route is added to the isolation sweep; the coverage test fails until it is.
 7. Errors are thrown, never returned.
 8. Requests and responses carry references, never internal ids.
+
+### Running it locally
+
+Prerequisites: Docker, Node 22 and pnpm. Postgres runs in Docker; the API and the CLI run on the host. The API is not containerised: the CLI needs Node anyway, so a container would remove no prerequisite.
+
+```
+pnpm install
+pnpm demo:setup                  # start Postgres, migrate, seed, build; says what each step did
+pnpm api                         # the API, in a terminal of its own
+export PATH="$PWD/bin:$PATH"     # makes `mctl` runnable; nothing is installed outside the repository
+pnpm demo:login                  # six demo profiles
+mctl status
+```
+
+- `bin/mctl` is a small wrapper script that runs the built CLI. There is no global install.
+- `pnpm demo:setup` can be run again safely. `pnpm demo:reset` reseeds, returning the walk-through to a clean state.
+- Postgres is published on host port 54329, so it cannot collide with a Postgres already running; the API listens on 3000. Both come from `.env`, which setup copies from a committed `.env.example`.
+- `pnpm test` runs the unit tests and needs no database. `pnpm test:int` runs the integration and end-to-end tests against a separate test database in the same Postgres.
+- `pnpm setup` is not used as a script name because pnpm has a command of that name.
+- `mctl status` reports the API address, whether it is reachable (`GET /health`), the current profile and when its login expires. Any command that cannot reach the API says so and names the command that starts it.
+
+### The README
+
+1. Three lines on what the product is.
+2. The setup above.
+3. The three-act walk-through from section 8, written from a real run so that references and output match.
+4. How to run the tests, and what each kind proves.
+5. A table of what is built, what is stretch and what is designed only.
+6. **Where the build diverged from the design**, filled in during the build as each divergence happens, with the reason.
+7. Pointers to `DESIGN.md`, `CONTEXT.md` and `transcripts/`, which holds the unedited AI transcripts.
 
 ## 10. Verification
 
@@ -555,9 +588,9 @@ Each step ends with passing tests and a commit. Estimates are in minutes, workin
 | 4. Missions, requirements and the lifecycle table | 45 |
 | 5. Matcher package, in isolation, with its tests | 45 |
 | 6. Match run and apply, hand assignment, proposal check and clashes, accept and decline, double-booking test | 45 |
-| 7. CLI: login and profiles, then commands in walk-through order | 40 |
+| 7. CLI: login and profiles, `mctl status`, then commands in walk-through order | 45 |
 | 8. End-to-end script, README, seed polish | 30 |
-| **Core** | **315** |
+| **Core** | **320** |
 
 Stretch, in order, if time remains: row-level security policies (60–90), then `--pin` and `--exclude` (15).
 
