@@ -11,7 +11,6 @@ import { eq } from 'drizzle-orm';
 import { hashPassword } from '../auth/password.ts';
 import { requireEnv } from '../env.ts';
 import { connect, type Database } from './connection.ts';
-import { toDaterange } from './period.ts';
 import * as schema from './schema.ts';
 import { type MissionSeed, type OrgSeed, SEED_BASE_DATE, SEED_ORGS } from './seed-data.ts';
 
@@ -24,7 +23,7 @@ export function seedDate(day: number, baseDate = SEED_BASE_DATE): string {
   return new Date(Date.parse(baseDate) + day * DAY).toISOString().slice(0, 10);
 }
 
-const seedPeriod = (fromDay: number, toDay: number) => toDaterange({ from: seedDate(fromDay), to: seedDate(toDay) });
+const seedPeriod = (fromDay: number, toDay: number) => ({ from: seedDate(fromDay), to: seedDate(toDay) });
 const seedTime = (day: number, hour: number) => new Date(Date.parse(SEED_BASE_DATE) + day * DAY + hour * 60 * 60 * 1000);
 const firstName = (name: string) => name.split(' ')[0]!;
 const reached = (mission: MissionSeed, status: MissionStatus) =>

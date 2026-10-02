@@ -37,6 +37,10 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - A test of the code structure rules: modules reach the database only through the request's transaction, and services and repositories import no HTTP.
 - Request and response schemas and error codes in the `contract` package.
 - Tenant isolation tests: a sweep that calls every route as each organisation and finds nothing of the other, and a coverage test that fails when a route is missing from the sweep.
+- Skills, crew and availability: `GET /v1/skills`; `GET`, `POST /v1/crew`; `GET`, `PATCH /v1/crew/:ref`; `PUT`, `DELETE /v1/crew/:ref/skills/:skill`; `GET`, `POST /v1/crew/:ref/availability`; `DELETE /v1/availability/:ref`. A crew member may write `me` for their own record.
+- Permissions with a scope: a crew member reads and edits only their own crew record and availability, and any other answers 404.
+- References (`CRW-n`, `AVL-n`) numbered per organisation, taken inside the creating transaction.
+- The isolation sweep now also calls every route that names a record with another organisation's references, and checks every response carries no internal id.
 - `CODING_STANDARDS.md`: the rules for writing code here, each with the reason it was adopted.
 - `README.md` with setup steps and a log of where the build diverged from the design.
 

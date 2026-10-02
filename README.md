@@ -46,4 +46,7 @@ Each entry is added when the divergence happens. `DESIGN.md` is not edited.
 - **`TOKEN_SECRET` must be at least 16 characters,** or the API refuses to start.
 - **Routes are declared as data, each with the permission it needs** (design section 9). Each module has a `routes.ts` beside its service and repository; the request pipeline refuses to run any handler registered without a permission. The `org` and `users` modules are additions to the design's module list, for `GET /v1/org` and `GET /v1/me`.
 - **Login makes the one query that is outside a request's transaction** (design section 9, rule 2), because no tenant is known yet. It is confined to `auth/repository.ts` and the privileged `auth_find_user` database function.
-- **The isolation sweep has no "reference gives 404" check yet** (design section 10). No route takes a reference until step 3, which adds that half of the sweep with the first such routes.
+- **A crew member edits their own name and skills, but only a director makes a crew member active or inactive** (design section 5, "Crew profiles: read and edit own"). The design does not split the profile; being taken off or put back on the roster is a director's decision.
+- **Adding a crew member takes only a name.** Users are seeded (a non-goal of the design is managing them), so a new crew member cannot yet be linked to a login.
+- **Skills are named exactly as the taxonomy spells them** (`EVA`, `field medicine`), case included.
+- **The isolation sweep compares whole values.** A response leaks when any string value in it equals one of the other organisation's names, emails, slugs or ids; it also must contain no internal id at all. Comparing substrings flagged Artemis's `medic` inside Helios Labs' `field medicine`.

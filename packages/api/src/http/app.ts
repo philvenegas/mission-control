@@ -6,10 +6,14 @@ import { can } from '../auth/policy.ts';
 import { type TokenSettings, verifyToken } from '../auth/token.ts';
 import type { Database } from '../db/connection.ts';
 import { withTenant } from '../db/tenant.ts';
-import { DomainError, forbidden, internal, invalidInput, notFound, unauthenticated } from '../errors.ts';
+import { DomainError, forbidden, internal, notFound, unauthenticated } from '../errors.ts';
+import { availabilityRoutes } from '../modules/availability/routes.ts';
+import { crewRoutes } from '../modules/crew/routes.ts';
 import { orgRoutes } from '../modules/org/routes.ts';
+import { skillRoutes } from '../modules/skills/routes.ts';
 import { userRoutes } from '../modules/users/routes.ts';
 import { describeActingUser } from '../modules/users/service.ts';
+import { readBody } from './request.ts';
 import { type AppEnv, type Route, routeKey } from './route.ts';
 
 export interface AppDependencies {
@@ -22,18 +26,10 @@ export interface AppDependencies {
   onUnexpectedError?: (error: unknown) => void;
 }
 
-const ROUTES: Route[] = [...userRoutes, ...orgRoutes];
+const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRoutes, ...availabilityRoutes];
 
 /** Thrown inside the request's transaction to roll it back after the response has been decided. */
 const ROLL_BACK = Symbol('roll back');
-
-async function readJson(c: Context): Promise<unknown> {
-  try {
-    return await c.req.json();
-  } catch {
-    throw invalidInput('The request body is not valid JSON.');
-  }
-}
 
 const render = (c: Context, error: DomainError) => c.json(error.toResponse(), error.status);
 
@@ -53,9 +49,7 @@ export function createApp({ db, token, extraRoutes = [], onUnexpectedError = con
   // Public routes: no login, no tenant.
   app.get('/v1/health', (c) => c.json<HealthResponse>({ status: 'ok' }));
   app.post('/v1/auth/login', async (c) => {
-    const request = loginRequestSchema.safeParse(await readJson(c));
-    if (!request.success) throw invalidInput('A login needs an organisation, an email and a password.');
-    return c.json(await login(db, request.data, token));
+    return c.json(await login(db, await readBody(c, loginRequestSchema), token));
   });
 
   /**
