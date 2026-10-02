@@ -29,6 +29,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `Makefile` wrapping the common setup, test and database commands.
 - `CLAUDE.md` and `docs/agents/` describing the issue tracker, triage labels and domain docs for coding agents.
 - GitHub Actions workflow (`CI`) that typechecks, checks the migrations match the schema, and runs the unit and integration tests against Postgres on every pull request and on `main`.
+- `CODING_STANDARDS.md`: the rules for writing code here, each with the reason it was adopted.
 - `README.md` with setup steps and a log of where the build diverged from the design.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main
