@@ -51,6 +51,7 @@ Text elsewhere marks these items as *(stretch)* or *(designed, not built)*.
 | D13 | The CLI holds no business logic | The API is the product; the CLI is one client of it | Shared logic in the CLI |
 | D14 | The API exposes references only; internal ids never appear in a path, body or response | References are numbered per organisation, so another organisation's record cannot even be named | Global ids in the API |
 | D15 | Email is unique within an organisation; login names the organisation | A globally unique email reveals that a user exists in another organisation | Globally unique email |
+| D16 | A draft's proposed crew are not held; two drafts may propose the same crew member, which is a clash that blocks both from submitting. Holds start at submit | A clash surfaces while both mission leads are still planning and can talk; nobody loses a crew member to whoever drafted first | Holding from proposal; first-to-submit wins silently |
 
 ## 3. Domain model
 
@@ -73,35 +74,65 @@ Every table carries its own `org_id` column, including the child tables below wh
 
 References. Five kinds of record have a reference, numbered per organisation and per kind, with a `ref` column unique on `(org_id, ref)`: mission `MSN`, crew member `CRW`, assignment `ASG`, match run `RUN`, availability block `AVL`. The next number for each kind is kept on the organisation row and taken inside the creating transaction. A skill is addressed by its name, a user by email, the organisation by its `slug` (globally unique). A requirement is addressed by its skill: `mission_requirements` is unique on `(mission_id, skill_id)`, so a mission has at most one requirement per skill. Two requirements for one skill at different levels is a later extension.
 
-Assignment statuses: `proposed`, `offered`, `accepted`, `declined`, `released`. The first three are "live" and hold the crew member's time.
+Assignment statuses: `proposed` (on a draft; not a hold), `held` (mission submitted, awaiting approval), `offered`, `accepted`, `declined`, `released`. `held`, `offered` and `accepted` are "live": they hold the crew member for the period.
 
 The booking rule, in the database (requires the `btree_gist` extension):
 
 ```sql
 ALTER TABLE assignments ADD CONSTRAINT no_double_booking
   EXCLUDE USING gist (crew_member_id WITH =, period WITH &&)
-  WHERE (status IN ('proposed', 'offered', 'accepted'));
+  WHERE (status IN ('held', 'offered', 'accepted'));
 ```
 
-A proposed assignment on a draft mission holds the crew member. This is deliberate: otherwise a director could approve a plan that is no longer staffable. The cost is that stale drafts can hoard crew; cancelling a mission releases its assignments, and an expiry for old drafts is a later addition.
+A proposed assignment on a draft does not hold the crew member, so the constraint ignores it. Section 4 ("Proposals, clashes and holds") says what happens when two drafts want the same person. The constraint is the final arbiter when two transactions try to take a hold on one crew member at the same moment: exactly one succeeds.
 
 ## 4. Mission lifecycle
 
 ```
-draft ──submit──▶ submitted ──approve──▶ approved ──launch──▶ active ──complete──▶ completed
-  ▲                  │
-  └──reject/withdraw─┘          cancel: from draft, submitted, approved or active ──▶ cancelled
+                   ┌──approve (more approvals needed)──┐
+                   ▼                                   │
+draft ──submit──▶ submitted ───────────────────────────┘
+  ▲                │   │
+  └────reject──────┘   └──approve (policy met)──▶ approved ──launch──▶ active ──complete──▶ completed
+
+withdraw: submitted ──▶ draft, by the submitter (designed, not built)
+cancel:   draft, submitted, approved or active ──▶ cancelled
 ```
+
+A mission's assignments move with it:
+
+| Mission status | Its assignments | Crew held? |
+|---|---|---|
+| `draft` | `proposed`; may clash with another draft | No |
+| `submitted` | `held` | Yes |
+| `approved` | `offered`, then `accepted` or `declined`; a declined or open slot is refilled as `offered` | Yes, except declined |
+| `active`, `completed` | `accepted` | Yes |
+| `cancelled` | `released` | No |
+| back to `draft` after `reject` | `held → proposed` | No |
 
 | Transition | Who | Guard | Effect |
 |---|---|---|---|
-| `submit` | Owner (lead) or director | At least one requirement; period in the future; every slot has a proposed crew member; enough directors other than the submitter exist to meet `approvals_required` | Sets `submitted_by`; starts a new submission (`submission_no` + 1) |
+| `submit` | Owner (lead) or director | At least one requirement; period in the future; every proposed assignment passes the proposal check (below); every slot is filled, unless the organisation allows unfilled submission; enough directors other than the submitter exist to meet `approvals_required` | Sets `submitted_by`; starts a new submission (`submission_no` + 1); assignments `proposed → held` |
 | `withdraw` *(designed, not built)* | Submitter | — | Back to `draft` |
-| `reject` | Director, not the submitter | Note required | Back to `draft`; assignments stay `proposed`. Approvals already given to this submission no longer count |
-| `approve` | Director, not the submitter | Has not already approved this submission | Records approval. When the approval policy is met: status `approved`, assignments `proposed → offered`. Otherwise the mission stays `submitted` |
+| `reject` | Director, not the submitter | Note required | Back to `draft`; assignments `held → proposed`, so the holds are dropped. Approvals already given to this submission no longer count |
+| `approve` | Director, not the submitter | Has not already approved this submission | Records approval. When the approval policy is met: status `approved`, assignments `held → offered`. Otherwise the mission stays `submitted` |
 | `launch` | Owner or director | Every slot `accepted` | Status `active` |
 | `complete` | Owner or director | — | Status `completed` |
-| `cancel` | Owner or director; director only once `active` | Note required | Live assignments `→ released` |
+| `cancel` | Owner or director; director only once `active` | Note required | Proposed and live assignments `→ released` |
+
+### Proposals, clashes and holds
+
+A draft plans; a submitted mission holds.
+
+- **Proposal.** On a draft, an assignment is `proposed`. It reserves nothing. It is created by applying a match run or by the mission lead assigning a named crew member to a slot by hand (`mctl assignment add MSN-4 --crew CRW-7 --skill medic`).
+- **Clash.** Two or more drafts with overlapping periods may propose the same crew member. That is a clash. It is not stored: it is worked out whenever a mission is read, so it is never stale. `mctl mission show` and `mctl mission list` mark it on every mission involved, naming the other mission and its owner. When a proposal creates a clash, the other mission gets a history event saying which mission and who.
+- **Proposal check.** A proposed assignment is sound when its crew member passes every hard constraint in section 6.2 and has no clash. Anything else is a problem shown on the mission with its reason: a clash, a crew member since held by a submitted mission, a new availability block, an expired certification, a crew member made inactive.
+- **Submit.** Submit runs the proposal check on every proposed assignment and is refused if any has a problem, listing each. On success the assignments become `held` in the same transaction.
+- **Ending a clash.** Either mission lead removes the crew member from their own mission, or a director removes them from either. Cancelling a draft releases its proposals. Nothing resolves automatically.
+- **Unfilled slots.** An organisation setting, `allow_unfilled_submission` (seeded; default false), decides whether a mission may be submitted with open slots. Where it is allowed, the director sees the fill count ("medic 2 of 3") and approves knowingly; the mission lead fills the slot after approval. Launch always needs every slot accepted.
+- **Hand assignment.** It enforces the same hard constraints as the matcher and gives the same reasons on refusal, with no override. On a draft it may create a clash, and the response says so. On an approved mission it fills an open slot directly as `offered` and must be clash-free with every hold; a draft that had proposed the same person then shows a problem.
+- **Availability over a commitment.** A crew member's availability block is refused when it overlaps one of their live assignments. For an offered or accepted assignment the message names the mission. For a held one, which they cannot see, it says only that they are being planned for a mission in that period and to speak to their mission lead. A block over a mere proposal is accepted, and the draft shows a problem.
+- **Crew choosing between missions** before approval is designed, not built (section 12).
 
 ### Approval policy
 
@@ -113,11 +144,11 @@ Submit is refused when the organisation has fewer directors able to approve than
 
 `mctl mission approve` reports progress ("Approved (1 of 2). MSN-4 stays submitted until one more director approves."), and `mctl mission show` lists who has approved.
 
-Rules that follow from this:
+### Rules for every transition
 
 - A mission's requirements, period and crew can be edited only in `draft`. What the director approves is exactly what was submitted.
-- Changing the period in `draft` updates the period on its assignments in the same transaction; the exclusion constraint rejects the change if it creates a clash.
-- After approval, a crew member's decline reopens that slot. The lead reruns the matcher for the gap and the replacement is created directly as `offered`. No second approval is needed. A per-organisation "re-approve on crew change" policy is a later addition.
+- Changing the period in `draft` updates the period on its assignments in the same transaction. The proposals are checked again when the mission is next read, so the change may create or clear a clash.
+- After approval, a crew member's decline reopens that slot. The lead reruns the matcher for the gap, or assigns by hand, and the replacement is created directly as `offered`. No second approval is needed. A per-organisation "re-approve on crew change" policy is a later addition.
 - Each transition runs as `UPDATE ... WHERE status = <expected>`, so two concurrent transitions cannot both succeed.
 - Every transition writes a `mission_events` row in the same transaction.
 
@@ -172,7 +203,7 @@ A crew member is a candidate for a slot only if all hold:
 2. Has the skill at or above the minimum level.
 3. If `certified_until` is set, it is on or after the mission's last day.
 4. No availability block overlaps the mission period.
-5. No live assignment on another mission overlaps the period. Widening the period by `min_rest_days` on each side is designed, not built.
+5. No live assignment (`held`, `offered`, `accepted`) on another mission overlaps the period. A proposal on another draft is not a hard constraint; it is a clash, handled in section 6.5. Widening the period by `min_rest_days` on each side is designed, not built.
 6. Has not declined this mission.
 7. Is not excluded by the lead for this run (`--exclude`) *(stretch)*.
 
@@ -201,8 +232,11 @@ Solve with a hand-written Hungarian algorithm (shortest-augmenting-path form, ab
 For `S` slots and `C` crew, build an `S × (C + S)` matrix of whole-number costs:
 
 - an allowed pair costs `round((1 − score) × 1,000,000)`;
-- each slot has its own "unfilled" column costing `UNFILLED = S × 1,000,000 + 1`, more than any sum of real costs, so filling one more slot always wins over quality;
+- each slot has its own "unfilled" column costing `UNFILLED` (defined below), more than any sum of real costs, so filling one more slot always wins;
+- a pair that would create a clash (the crew member is proposed on another draft for an overlapping period) costs an extra `CLASH = S × 1,000,000 + 1`, more than any sum of clash-free costs;
 - a forbidden pair, and any other slot's "unfilled" column, costs `2 × UNFILLED`.
+
+With clashes in play, `UNFILLED = S × (CLASH + 1,000,000) + 1`. The priorities are therefore strict: fill as many slots as possible, then create as few clashes as possible, then get the best total score. The matcher builds a clash-free crew whenever one exists and flags any clash it could not avoid.
 
 A slot whose answer is a column at or beyond `C` is unfilled. Infinity is never passed to the solver.
 
@@ -219,7 +253,7 @@ A match run is saved and returned with:
 - per unfilled slot: a count of candidates lost to each hard constraint, and the nearest miss ("Ada: level 3, needs 4");
 - a summary: slots filled out of total.
 
-`apply` turns a run into `proposed` assignments in one transaction. If the data has changed since the run, the exclusion constraint rejects the clash and the API tells the lead to rerun.
+`apply` turns a run into assignments in one transaction: `proposed` on a draft, `offered` on an approved mission. It re-checks the hard constraints first; if the data has changed since the run, the API tells the lead to rerun. On an approved mission the exclusion constraint is the final guard.
 
 Known limit: constraints over the team as a whole, and optimising several missions together, do not fit the assignment model. They need an integer-programming solver. The matcher's interface (`match(input) → result`) is solver-agnostic, so that swap would not touch the API.
 
@@ -238,7 +272,7 @@ REST over JSON, prefix `/v1`. No organisation identifier appears in any path.
 | Requirements | `PUT /missions/:ref/requirements/:skill`, `DELETE /missions/:ref/requirements/:skill` |
 | Lifecycle | `POST /missions/:ref/{submit,approve,reject,launch,complete,cancel}`; `withdraw` *(designed, not built)* |
 | Matching | `POST /missions/:ref/match`, `GET /match-runs/:ref`, `POST /match-runs/:ref/apply` |
-| Assignments | `GET /assignments` (own, for crew), `POST /assignments/:ref/{accept,decline}`, `DELETE /assignments/:ref` |
+| Assignments | `GET /assignments` (own, for crew), `POST /missions/:ref/assignments` (assign by hand), `POST /assignments/:ref/{accept,decline}`, `DELETE /assignments/:ref` |
 
 `:ref` is the record's reference (`MSN-12`, `CRW-7`, `ASG-31`, `RUN-9`, `AVL-3`); crew members may use `me` for their own crew record. `:skill` is the skill's name. Internal ids appear nowhere in the API.
 
@@ -290,7 +324,7 @@ mctl mission launch MSN-4
 mctl mission history MSN-4              # the audit trail
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl org show`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove`, `mctl org show`.
 
 `mctl match run` is the centrepiece and its output gets the most design attention: one row per slot with crew, score and component bars; alternates indented beneath; unfilled slots in a separate block with the reason counts and nearest miss.
 
@@ -331,8 +365,31 @@ Rules for whoever writes the code, human or agent:
 | Matcher correctness | Unit tests per constraint and scorer; the greedy-fails case; a property test comparing the solver with brute force on small random inputs; a determinism test |
 | Tenant isolation | Integration tests against real Postgres. (1) A sweep: a user from organisation B calls every route; lists contain no organisation A rows, and references that exist only in A give `404`. (2) A coverage test that fails when a registered route is missing from the sweep. (3) A direct database test that a row linking to another organisation's row is rejected by the composite foreign key. (4) A response with status 400 or above leaves no writes behind. With the stretch step: a direct query with B's tenant set returns no A rows, and the API's database role cannot bypass policies |
 | Lifecycle | A table-driven test over every (status, transition, role) combination; self-approval refused for leads and directors; `approvalState` unit tests; with two approvals required: one approval leaves the mission `submitted`, the same director cannot approve twice, a rejection voids the earlier approval, and submit is refused when too few directors can approve |
-| Double booking | Two concurrent `apply` calls for the same crew member and overlapping periods: exactly one succeeds, the other gets `409` |
+| Double booking | Two concurrent transactions that each take a hold on the same crew member for overlapping periods: exactly one succeeds, the other gets `409` |
+| Proposals, clashes and holds | Every scenario in the table below, as integration tests |
 | CLI | The section 8 walk-through as a scripted end-to-end test against a seeded database, asserting exit codes and `--json` output |
+
+Clash scenarios. Sam and Priya are mission leads; Ada is a crew member.
+
+| # | Scenario | Expected |
+|---|---|---|
+| 1 | Sam's and Priya's drafts overlap and both propose Ada | Both missions show the clash, naming the other; neither can be submitted; Sam's mission has a history event |
+| 2 | The same with three drafts | All three show the clash and are blocked |
+| 3 | The periods do not overlap | No clash; both can be submitted |
+| 4 | Priya removes Ada | The clash clears on both; Sam can submit |
+| 5 | A director removes Ada from Sam's draft | The clash clears on both |
+| 6 | Sam cancels his draft | His proposals are released; the clash clears on Priya's |
+| 7 | Priya changes her period so it no longer overlaps, then back | The clash clears, then returns |
+| 8 | Matcher for Priya; a clash-free full crew exists | Ada is not chosen; no clash created |
+| 9 | Matcher for Priya; without Ada a slot would be unfilled | Ada is chosen and flagged as a clash |
+| 10 | Sam's mission is submitted, so Ada is held | Priya's matcher excludes Ada, naming Sam's mission; assigning her by hand is refused with the same reason |
+| 11 | Sam's mission is rejected back to draft | Ada's hold is dropped; Priya can propose her, which is a clash again |
+| 12 | An approved mission refills a declined slot with Ada, who is proposed on Priya's draft | Ada is offered; Priya's draft shows a problem and cannot be submitted |
+| 13 | Ada adds an availability block over a proposal | Accepted; the draft shows a problem and cannot be submitted |
+| 14 | Ada adds an availability block over a held, offered or accepted assignment | Refused; the message names the mission only for offered and accepted |
+| 15 | Two transactions take a hold on Ada at the same moment | Exactly one succeeds; the other gets `409` |
+| 16 | A slot is unfilled; the organisation is strict | Submit is refused |
+| 17 | A slot is unfilled; the organisation allows it | Submit and approval succeed; launch is refused until the slot is filled and accepted |
 
 Seed data: two organisations with different skill taxonomies and settings (one needs two approvals), around fifteen crew each, missions in several statuses, the greedy-fails case, and one mission that cannot be fully staffed so the unfilled-slot explanation is visible.
 
@@ -345,12 +402,12 @@ Each step ends with passing tests and a commit. Estimates are in minutes, workin
 | 1. Workspace, Docker Postgres, owner and API database roles, schema with `org_id` on every table, migrations, seed | 45 |
 | 2. Login, tenant-scoped transaction middleware, policy module, isolation tests | 50 |
 | 3. Skill list; crew add, show, list, set skill; availability add, list, remove | 15 |
-| 4. Missions, requirements and the lifecycle table | 35 |
-| 5. Matcher package, in isolation, with its tests | 40 |
-| 6. Match run and apply, assignments, accept and decline, double-booking test | 30 |
+| 4. Missions, requirements and the lifecycle table | 45 |
+| 5. Matcher package, in isolation, with its tests | 45 |
+| 6. Match run and apply, hand assignment, proposal check and clashes, accept and decline, double-booking test | 45 |
 | 7. CLI: login and profiles, then commands in walk-through order | 40 |
 | 8. End-to-end script, README, seed polish | 30 |
-| **Core** | **285** |
+| **Core** | **315** |
 
 Stretch, in order, if time remains: row-level security policies (60–90), then `--pin` and `--exclude` (15).
 
@@ -358,10 +415,11 @@ Stretch, in order, if time remains: row-level security policies (60–90), then 
 
 - **Resource constraints** (vehicles, equipment, budgets): a resource becomes another schedulable entity with the same exclusion-constraint pattern, and its limits become hard constraints in the matcher's list. Limits that span the team move the solver from assignment to integer programming behind the same interface.
 - **Different approval workflows** (multi-stage, by mission size, delegated approvers): the policy grows from a single number into an ordered list of stages, each naming who may approve, and only `approvalState` changes; `mission_approvals` already records each decision against its submission.
+- **Crew choosing between missions**: when two drafts clash over a crew member, let that crew member see both and state a preference before either is submitted. It needs a new response and a new visibility rule for drafts.
 - **Scale**: the matcher loads only crew who hold a required skill; if organisations reach thousands of crew, shortlist per slot before solving.
 
 ## 13. Open questions
 
 1. Should a crew member see who else is on their mission? Current answer: no.
-2. Should proposed assignments on old drafts expire? Current answer: not in this build.
+2. Should a director be told when a clash has stood for a long time? Current answer: not in this build; drafts no longer hold crew, so a stale draft only blocks itself and any draft it clashes with.
 3. Should a director be able to override a hard constraint with a recorded reason? Current answer: no; they remove the blocking record instead.

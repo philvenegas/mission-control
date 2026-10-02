@@ -22,13 +22,14 @@ Each holds everywhere, and each has a test that fails when it is broken.
 3. **Approver is another person.** Whoever submitted a mission cannot approve or reject it, whatever their role.
 4. **Edit in draft.** A mission's requirements, period and crew change only while it is `draft`; what is approved is what was submitted.
 5. **One lifecycle table.** Every status change goes through the transition table and writes an event in the same transaction.
-6. **One live assignment at a time.** A crew member's live assignments never overlap in period. The database constraint is the authority; application checks only improve the error message.
+6. **One live assignment at a time.** A crew member's live assignments (held, offered, accepted) never overlap in period. A proposal on a draft is a plan, not a hold. The database constraint is the authority; application checks only improve the error message.
 7. **The matcher suggests.** A match run changes nothing until a person applies it.
 8. **The matcher is pure.** Input in, result out, same input same result. It knows nothing of HTTP or the database.
 9. **The API decides.** The CLI sends requests and formats responses.
 10. **Every exclusion has a reason.** A crew member left out of a slot, or a slot left unfilled, can always be explained to the mission lead.
 11. **References only.** Requests and responses name records by reference, which resolves inside the caller's organisation. Internal ids stay inside the API.
 12. **Errors are thrown.** A failed request leaves no writes: every error is a thrown domain error, and any throw or any response of 400 or above rolls the request's transaction back.
+13. **Submitted means sound.** Submit succeeds only when every proposed assignment passes the proposal check: no clash, no failed hard constraint.
 
 ## Where the mechanics live
 

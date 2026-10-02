@@ -103,12 +103,16 @@ _Avoid_: Log entry, audit record
 ### Staffing
 
 **Assignment**:
-One crew member in one slot of one mission, with a status of proposed, offered, accepted, declined or released.
+One crew member in one slot of one mission, with a status of proposed, held, offered, accepted, declined or released.
 _Avoid_: Booking, allocation, placement
 
 **Proposed**:
-An assignment on a mission that is not yet approved.
+An assignment on a draft mission. It plans a crew member without holding them.
 _Avoid_: Tentative, pending, draft assignment
+
+**Held**:
+An assignment on a submitted mission, awaiting approval. The crew member is held but has not yet been asked.
+_Avoid_: Reserved, locked, pending
 
 **Offered**:
 An assignment on an approved mission, awaiting the crew member's response.
@@ -119,12 +123,20 @@ An assignment withdrawn by the mission lead or by the mission's cancellation.
 _Avoid_: Removed, cancelled assignment
 
 **Live**:
-An assignment that is proposed, offered or accepted.
+An assignment that is held, offered or accepted.
 _Avoid_: Active assignment, open
 
 **Hold**:
 The claim a live assignment has on a crew member for its period.
 _Avoid_: Reservation, lock, booking
+
+**Clash**:
+Two or more draft missions with overlapping periods proposing the same crew member.
+_Avoid_: Conflict, collision, double booking
+
+**Problem**:
+A reason a proposed assignment is no longer sound, such as a clash or a new availability block; any problem blocks submission.
+_Avoid_: Warning, issue, error
 
 **Respond**:
 A crew member accepting or declining an offered assignment.
