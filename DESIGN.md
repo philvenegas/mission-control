@@ -173,7 +173,7 @@ Permissions are declared in one policy module and checked by one middleware. A r
 
 ### Authentication
 
-`POST /v1/auth/login` takes the organisation's slug, an email and a password, and returns a signed token carrying user id, `org_id` and role. Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by slug and email. Every failure gives the same answer, "invalid organisation, email or password", so login does not reveal which organisations or emails exist.
+`POST /v1/auth/login` takes the organisation's slug, an email and a password, and returns a signed token carrying user id, `org_id` and role, valid for 12 hours by default (`TOKEN_TTL`). Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by slug and email. Every failure gives the same answer, "invalid organisation, email or password", so login does not reveal which organisations or emails exist.
 
 ### Keeping a request inside its organisation
 
@@ -311,9 +311,21 @@ Principles:
 - Default output is a readable table or summary; `--json` on every command gives the raw API response.
 - Colour and spinners only when writing to a terminal.
 - Errors print the API's message and hint, then exit non-zero: `1` general, `2` usage, `3` not logged in, `4` forbidden, `5` not found, `6` conflict.
-- Named profiles make role switching one flag: `--profile`, or `MCTL_PROFILE`.
+- Named profiles make role switching one flag: `--profile`, or `MCTL_PROFILE`. Every command says who it ran as.
 - Destructive commands ask for confirmation unless `--yes` is given.
 - After a successful command, print the likely next command.
+
+### Login and profiles
+
+- **Login.** `mctl login --org <slug> --email <email> [--profile <name>] [--api <url>]`. The password is asked for with a hidden prompt in a terminal, or read with `--password-stdin` in scripts. There is no `--password` flag, so a password never lands in shell history.
+- **Where logins are kept.** One file, `~/.config/mctl/config.json`, readable only by the user (`0600`), overridable with `MCTL_CONFIG`. Per profile: API address, organisation, email, name, role, token, expiry. The system keychain is a later extension.
+- **Current profile.** The first login becomes current. `mctl profile use <name>` changes it; `--profile` or `MCTL_PROFILE` overrides it for one command. `mctl profile list` shows every profile and marks the current one.
+- **Acting as.** Every command prints one dim line before its output, on the error stream so that `--json` and pipes stay clean: `as Dana Okoye · director · Artemis`.
+- **Expiry.** Tokens last 12 hours by default, set by the server's `TOKEN_TTL`; the local development setup uses 7 days. There is no refresh. An expired token exits with code 3 and prints the exact command to log back in, with organisation and email remembered.
+- **Logout.** `mctl logout [--profile <name> | --all]` removes the token locally. Tokens are stateless, so there is no server-side revocation.
+- **API address.** Defaults to `http://localhost:3000`; set at login with `--api` or `MCTL_API` and stored in the profile.
+- **Role changes.** The role is carried in the token, so a changed role takes effect at the next login.
+- **Demo profiles.** `pnpm demo:login` is a repository script, not a CLI feature. It runs `mctl login --password-stdin` for each seeded demo user and names the profiles `lead`, `director`, `ada`, `quin`, `mina` and `helios`, with `lead` current.
 
 ### The walk-through
 
@@ -322,8 +334,10 @@ The README carries one walk-through in three short acts. It is also the scripted
 **Act 1 — plan to launch.** A two-slot mission, so that few crew logins are needed.
 
 ```
-mctl login --org artemis --email sam@artemis.example --profile lead
+pnpm demo:login                            # six profiles: lead (current), director, ada, quin, mina, helios
+mctl login --org artemis --email sam@artemis.example --profile lead   # the real flow, once, by hand
 mctl whoami
+mctl profile list
 
 mctl mission create --name "Europa Survey" --from 2027-03-01 --to 2027-03-20
 mctl mission require MSN-4 --skill pilot --level 3
@@ -357,13 +371,12 @@ mctl mission submit MSN-5                  # succeeds
 **Act 3 — another organisation sees nothing.**
 
 ```
-mctl login --org helios --email lead@helios.example --profile helios
 mctl mission show MSN-4 --profile helios   # not found: MSN-4 is Artemis's
 mctl mission list --profile helios         # only Helios's missions
 mctl crew list --profile helios            # only Helios's crew, with its own skill names
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl profile list|use`, `mctl logout`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
 
 ### What `mctl match run` prints
 
