@@ -5,6 +5,7 @@ A multi-tenant API and a CLI (`mctl`) where space organisations plan missions an
 - `DESIGN.md` is the final design and guides the build. Do not edit it; record any divergence, with its reason, in the README section "Where the build diverged from the design".
 - The build follows `DESIGN.md` section 11, one GitHub issue per step. Each step ends with passing tests.
 - Commit only when asked.
+- `CODING_STANDARDS.md` says how code is written here. Read it before writing or reviewing code.
 
 ## Commands
 
