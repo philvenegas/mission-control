@@ -67,10 +67,10 @@ Every table carries its own `org_id` column, including the child tables below wh
 | `availability_blocks` | `id`, `crew_member_id`, `period` (daterange), `reason` | Crew are available unless a block says otherwise |
 | `missions` | `id`, `org_id`, `ref`, `name`, `description`, `period` (daterange), `status`, `owner_id`, `submitted_by`, `submission_no` | `ref` is a per-organisation number shown as `MSN-12` |
 | `mission_requirements` | `id`, `mission_id`, `skill_id`, `min_level`, `headcount` | Each unit of headcount is one slot |
-| `assignments` | `id`, `mission_id`, `requirement_id`, `crew_member_id`, `period`, `status`, `score`, `decline_reason` | `period` is copied from the mission |
+| `assignments` | `id`, `ref`, `mission_id`, `requirement_id`, `crew_member_id`, `period`, `status`, `score`, `match_run_id` (nullable), `created_by`, `decline_reason` | `period` is copied from the mission. `match_run_id` is set when a match run produced the assignment; when it is null, `created_by` assigned it by hand |
 | `mission_approvals` | `id`, `mission_id`, `submission_no`, `approver_id`, `decision`, `note`, `created_at` | One row per decision. Unique on `(mission_id, submission_no, approver_id)` |
 | `mission_events` | `id`, `mission_id`, `actor_id`, `type`, `from_status`, `to_status`, `note`, `created_at` | Append-only audit log |
-| `match_runs` | `id`, `mission_id`, `created_by`, `result` (jsonb), `created_at` | The saved proposal and its explanation |
+| `match_runs` | `id`, `ref`, `mission_id`, `created_by`, `result` (jsonb), `weights` (jsonb), `applied_at` (nullable), `created_at` | The saved proposal and its explanation, with the weights in force. Kept indefinitely |
 
 References. Five kinds of record have a reference, numbered per organisation and per kind, with a `ref` column unique on `(org_id, ref)`: mission `MSN`, crew member `CRW`, assignment `ASG`, match run `RUN`, availability block `AVL`. The next number for each kind is kept on the organisation row and taken inside the creating transaction. A skill is addressed by its name, a user by email, the organisation by its `slug` (globally unique). A requirement is addressed by its skill: `mission_requirements` is unique on `(mission_id, skill_id)`, so a mission has at most one requirement per skill. Two requirements for one skill at different levels is a later extension.
 
@@ -246,7 +246,7 @@ With clashes in play, `UNFILLED = S × (CLASH + 1,000,000) + 1`. The priorities 
 
 A slot whose answer is a column at or beyond `C` is unfilled. Infinity is never passed to the solver.
 
-Crew already `offered` or `accepted` on the mission are fixed in place; only open slots are solved. The lead can also fix someone with `--pin` *(stretch)*.
+The matcher solves only a mission's open slots. Crew already proposed, held, offered or accepted on it stay where they are, so a run never undoes a hand assignment. To start over on a draft, the mission lead clears its proposals first (`mctl assignment clear MSN-4`). The lead can also fix someone with `--pin` *(stretch)*.
 
 Slots and crew are sorted by reference before the matrix is built, costs are whole numbers, and comparisons are strict, so the same data always gives the same result.
 
@@ -259,7 +259,16 @@ A match run is saved and returned with:
 - per unfilled slot: a count of candidates lost to each hard constraint, and the nearest miss ("Ada: level 3, needs 4");
 - a summary: slots filled out of total.
 
-`apply` turns a run into assignments in one transaction: `proposed` on a draft, `offered` on an approved mission. It re-checks the hard constraints first; if the data has changed since the run, the API tells the lead to rerun. On an approved mission the exclusion constraint is the final guard.
+`apply` turns a run into assignments in one transaction: `proposed` on a draft, `offered` on an approved mission.
+
+- **All or nothing.** Apply re-checks every chosen crew member against the hard constraints. If any now fails, nothing is applied; the response names who failed and why, and tells the lead to run the matcher again. A crew chosen together is not applied in part.
+- **Once.** A run that has been applied cannot be applied again.
+- **Partly filled runs.** A run with unfilled slots creates assignments for the slots it did fill.
+- **Clashes need a yes.** When a run chose someone despite a clash, `mctl match apply` asks for confirmation, naming the other mission, unless `--yes` is given.
+- **Origin.** Each assignment records the run that produced it, or who assigned it by hand, and its score. `mctl mission show` marks each crew member as chosen by the matcher or by a person, and `mctl match show RUN-9` gives the full reasoning to the mission's owner and to directors.
+- **`--apply`.** `mctl match run MSN-4 --apply` is the CLI making the two calls in sequence, for when the review step is not wanted.
+
+On an approved mission the exclusion constraint is the final guard.
 
 Known limit: constraints over the team as a whole, and optimising several missions together, do not fit the assignment model. They need an integer-programming solver. The matcher's interface (`match(input) → result`) is solver-agnostic, so that swap would not touch the API.
 
@@ -278,7 +287,7 @@ REST over JSON, prefix `/v1`. No organisation identifier appears in any path.
 | Requirements | `PUT /missions/:ref/requirements/:skill`, `DELETE /missions/:ref/requirements/:skill` |
 | Lifecycle | `POST /missions/:ref/{submit,approve,reject,launch,complete,cancel}`; `withdraw` *(designed, not built)* |
 | Matching | `POST /missions/:ref/match`, `GET /match-runs/:ref`, `POST /match-runs/:ref/apply` |
-| Assignments | `GET /assignments` (own, for crew), `POST /missions/:ref/assignments` (assign by hand), `POST /assignments/:ref/{accept,decline}`, `DELETE /assignments/:ref` |
+| Assignments | `GET /assignments` (own, for crew), `POST /missions/:ref/assignments` (assign by hand), `DELETE /missions/:ref/assignments` (clear a draft's proposals), `POST /assignments/:ref/{accept,decline}`, `DELETE /assignments/:ref` |
 
 `:ref` is the record's reference (`MSN-12`, `CRW-7`, `ASG-31`, `RUN-9`, `AVL-3`); crew members may use `me` for their own crew record. `:skill` is the skill's name. Internal ids appear nowhere in the API.
 
@@ -330,7 +339,7 @@ mctl mission launch MSN-4
 mctl mission history MSN-4              # the audit trail
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove`, `mctl org show`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
 
 `mctl match run` is the centrepiece and its output gets the most design attention: one row per slot with crew, score and component bars; alternates indented beneath; unfilled slots in a separate block with the reason counts and nearest miss.
 
