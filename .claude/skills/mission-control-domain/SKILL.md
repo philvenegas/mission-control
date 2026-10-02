@@ -30,6 +30,7 @@ Each holds everywhere, and each has a test that fails when it is broken.
 11. **References only.** Requests and responses name records by reference, which resolves inside the caller's organisation. Internal ids stay inside the API.
 12. **Errors are thrown.** A failed request leaves no writes: every error is a thrown domain error, and any throw or any response of 400 or above rolls the request's transaction back.
 13. **Submitted means sound.** Submit succeeds only when every proposed assignment passes the proposal check: no clash, no failed hard constraint.
+14. **No overrides.** Nobody assigns a crew member against a hard constraint; the blocking record is changed instead.
 
 ## Where the mechanics live
 

@@ -1,6 +1,6 @@
 # Mission Control — Design Document
 
-Status: draft for review, written before implementation.
+Status: final, 2 October 2026. Written before implementation; every decision in it was made deliberately and is recorded, with its discussion, on the planning map (GitHub issue 1 and its closed sub-issues). Divergences during the build are listed in the README, not edited in here.
 Audience: the engineering team, and the AI coding agent that will implement it.
 
 ## 1. What we are building
@@ -43,7 +43,7 @@ Text elsewhere marks these items as *(stretch)* or *(designed, not built)*.
 | D5 | `User` and `CrewMember` are separate, optionally linked | Crew are schedulable resources even without a login; leads and directors are not crew by default | One table with nullable profile fields |
 | D6 | Skills, score weights and approval policy are per-organisation data | The brief says organisations differ in taxonomy and approval process | Global skill list, hard-coded policy |
 | D7 | Mission lifecycle is one transition table with guards and effects | One place to read, test and later change the workflow | Status checks scattered through handlers |
-| D8 | Crew are proposed before submission, offered on approval, then respond | The director approves a staffable plan; crew are not asked about missions that may be rejected | Confirm-before-submit; assign-after-approval |
+| D8 | Crew are proposed before submission, offered on approval, then respond | The director approves the plan as submitted, crew included; crew are not asked about missions that may be rejected | Confirm-before-submit; assign-after-approval |
 | D9 | The approver can never be the submitter, for any role | The brief states it for leads; a director approving their own mission is the same failure | Rule applied to leads only |
 | D10 | Matching is a minimum-cost assignment, not a greedy ranking | Greedy can miss a full roster that exists (section 6.3) | Greedy; integer-programming solver |
 | D11 | The matcher suggests; a human applies | Leads keep control and the run is an auditable record | Matcher writes assignments directly |
@@ -59,12 +59,12 @@ Every table carries its own `org_id` column, including the child tables below wh
 
 | Table | Key fields | Notes |
 |---|---|---|
-| `organisations` | `id`, `name`, `slug`, `settings` | `settings`: `approvals_required` (default 1), `min_rest_days` (default 0; designed, not built), `match_weights`. Seeded; read-only in the core |
+| `organisations` | `id`, `name`, `slug`, `settings` | `settings`: `approvals_required` (default 1), `allow_unfilled_submission` (default false), `min_rest_days` (default 0; designed, not built), `match_weights`. Seeded; read-only in the core |
 | `users` | `id`, `org_id`, `email`, `password_hash`, `name`, `role` | Unique on `(org_id, email)`. `role`: `director`, `mission_lead`, `crew_member` |
 | `crew_members` | `id`, `org_id`, `ref`, `user_id` (nullable, unique), `name`, `status` | `status`: `active`, `inactive` |
 | `skills` | `id`, `org_id`, `name`, `category` | Unique on `(org_id, name)` |
 | `crew_skills` | `crew_member_id`, `skill_id`, `level` 1–5, `certified_until` (nullable) | Levels: 1 novice, 3 competent, 5 expert |
-| `availability_blocks` | `id`, `crew_member_id`, `period` (daterange), `reason` | Crew are available unless a block says otherwise |
+| `availability_blocks` | `id`, `ref`, `crew_member_id`, `period` (daterange), `reason` | Crew are available unless a block says otherwise |
 | `missions` | `id`, `org_id`, `ref`, `name`, `description`, `period` (daterange), `status`, `owner_id`, `submitted_by`, `submission_no` | `ref` is a per-organisation number shown as `MSN-12` |
 | `mission_requirements` | `id`, `mission_id`, `skill_id`, `min_level`, `headcount` | Each unit of headcount is one slot |
 | `assignments` | `id`, `ref`, `mission_id`, `requirement_id`, `crew_member_id`, `period`, `status`, `score`, `match_run_id` (nullable), `created_by`, `decline_reason` | `period` is copied from the mission. `match_run_id` is set when a match run produced the assignment; when it is null, `created_by` assigned it by hand |
@@ -130,7 +130,8 @@ A draft plans; a submitted mission holds.
 - **Submit.** Submit runs the proposal check on every proposed assignment and is refused if any has a problem, listing each. On success the assignments become `held` in the same transaction.
 - **Ending a clash.** Either mission lead removes the crew member from their own mission, or a director removes them from either. Cancelling a draft releases its proposals. Nothing resolves automatically.
 - **Unfilled slots.** An organisation setting, `allow_unfilled_submission` (seeded; default false), decides whether a mission may be submitted with open slots. Where it is allowed, the director sees the fill count ("medic 2 of 3") and approves knowingly; the mission lead fills the slot after approval. Launch always needs every slot accepted.
-- **Hand assignment.** It enforces the same hard constraints as the matcher and gives the same reasons on refusal, with no override. On a draft it may create a clash, and the response says so. On an approved mission it fills an open slot directly as `offered` and must be clash-free with every hold; a draft that had proposed the same person then shows a problem.
+- **Hand assignment.** It enforces the same hard constraints as the matcher and gives the same reasons on refusal.
+- **No overrides.** Nobody, a director included, can assign a crew member against a hard constraint. The director changes the record that blocks it (removes the availability block, releases the other assignment), which leaves a plainer trail than an exception would. On a draft it may create a clash, and the response says so. On an approved mission it fills an open slot directly as `offered` and must be clash-free with every hold; a draft that had proposed the same person then shows a problem.
 - **Availability over a commitment.** A crew member's availability block is refused when it overlaps one of their live assignments. For an offered or accepted assignment the message names the mission. For a held one, which they cannot see, it says only that they are being planned for a mission in that period and to speak to their mission lead. A block over a mere proposal is accepted, and the draft shows a problem.
 - **Crew choosing between missions** before approval is designed, not built (section 12).
 
@@ -140,9 +141,9 @@ A **submission** is one trip of a mission through approval. Approvals belong to 
 
 Whether a submission is approved is decided by one pure function, `approvalState(policy, approvals) → pending | approved`. Today the policy is `{ approvals_required }` and the function counts approvals from distinct directors. A single rejection ends the submission. The policy is seeded per organisation; one seed organisation requires one approval and the other two.
 
-Submit is refused when the organisation has fewer directors able to approve than the policy requires, the submitter excluded: "Artemis requires 2 approvals, but only 1 director other than you can approve." A mission never waits on an approval that cannot come.
+Submit is refused when the organisation has fewer directors able to approve than the policy requires, the submitter excluded: "Helios Labs requires 2 approvals, but only 1 director other than you can approve." A mission never waits on an approval that cannot come.
 
-`mctl mission approve` reports progress ("Approved (1 of 2). MSN-4 stays submitted until one more director approves."), and `mctl mission show` lists who has approved.
+`mctl mission approve` reports progress ("Approved (1 of 2). MSN-1 stays submitted until one more director approves."), and `mctl mission show` lists who has approved.
 
 ### Rules for every transition
 
@@ -162,8 +163,8 @@ The whole table lives in one module (`lifecycle.ts`) as data: `{ from, to, roles
 | Skills taxonomy | Read (seeded) | Read | Read |
 | Crew profiles | Manage all | Read all | Read and edit own |
 | Availability | Manage all | Read all | Manage own |
-| Missions | Read all, create, edit any draft | Read all, create, edit own drafts | Read only missions they are assigned to (name, period, own slot) |
-| Run matcher, apply proposal | Yes | Own missions | — |
+| Missions | Read all, create, edit any draft | Read all, create, edit own drafts | Read only missions on which they have an offered or accepted assignment, and only its name, period and their own slot. They do not see the rest of the crew, nor any mission that is merely planning or holding them |
+| Run matcher, apply a run, assign by hand, see a match run | Yes | Own missions | — |
 | Submit | Yes | Own missions | — |
 | Approve, reject | Yes, except own submissions | — | — |
 | Respond to assignment | — | — | Own only |
@@ -211,7 +212,9 @@ Each failed check is recorded with its reason. That record is what makes the exp
 
 ### 6.3 Why not greedy
 
-Slots: Pilot (level 3) and Medic (level 3). Crew: Ada is a level 5 pilot and a level 4 medic; Ben is a level 4 pilot only. Greedy fills Medic with Ada (the only medic), fine, but if it fills Pilot first it takes Ada, the best pilot, and Medic is left empty. The correct answer, Ben as pilot and Ada as medic, needs the two choices to be made together. The seed data includes this case as the Io Flyby mission.
+A mission needs a pilot at level 3 and a medic at level 4. Ada is a level 5 pilot and a level 4 medic. Ben is a level 4 pilot and no medic. Nobody else free is a medic at level 4.
+
+A matcher that fills one slot at a time, best candidate first, makes Ada the pilot, because she is the best pilot. The medic slot then has nobody. The crew that fills both slots, Ben as pilot and Ada as medic, is found only by choosing the two together. The seed includes this case as the Io Flyby mission, and a test asserts the outcome.
 
 ### 6.4 Scoring
 
@@ -220,8 +223,8 @@ Each candidate and slot pair gets a score from 0 to 1, a weighted sum of compone
 | Component | Default weight | Definition |
 |---|---|---|
 | Proficiency | 0.45 | `0.6 + 0.1 × (level − minimum level)`: meeting the bar earns 60%, each level above it adds 10 points |
-| Workload balance | 0.35 | `1 − (days assigned in the 90 days either side of the mission start ÷ 180)` |
-| Rest | 0.20 | Days since the end of their previous mission, capped at 30, divided by 30. A crew member who has never flown counts as fully rested |
+| Workload balance | 0.35 | `1 − (days assigned in the 90 days either side of the mission start ÷ 180)`. Days assigned are days covered by the crew member's held, offered or accepted assignments, including those on active and completed missions. Proposals on drafts do not count |
+| Rest | 0.20 | Days from the end of their previous assignment (the latest held, offered or accepted one ending before this mission starts) to this mission's start, capped at 30, divided by 30. A crew member who has never flown counts as fully rested |
 
 These definitions and weights were tried against seven scenarios in a throwaway prototype (branch `prototype/scoring-model`) and accepted with their consequences understood:
 
@@ -248,7 +251,7 @@ A slot whose answer is a column at or beyond `C` is unfilled. Infinity is never 
 
 The matcher solves only a mission's open slots. Crew already proposed, held, offered or accepted on it stay where they are, so a run never undoes a hand assignment. To start over on a draft, the mission lead clears its proposals first (`mctl assignment clear MSN-4`). The lead can also fix someone with `--pin` *(stretch)*.
 
-Slots and crew are sorted by reference before the matrix is built, costs are whole numbers, and comparisons are strict, so the same data always gives the same result.
+Slots and crew are sorted by reference number before the matrix is built, costs are whole numbers, and comparisons are strict, so the same data always gives the same result.
 
 ### 6.6 Output
 
@@ -256,7 +259,9 @@ A match run is saved and returned with:
 
 - per slot: the chosen crew member, the score and its breakdown by component;
 - per slot: up to three alternates, in score order;
-- per unfilled slot: a count of candidates lost to each hard constraint, and the nearest miss ("Ada: level 3, needs 4");
+- per unfilled slot: a count of crew lost to each hard constraint, and the two nearest misses with what each lacks;
+- any clash the run could not avoid, naming the other mission;
+- crew who hold a required skill but were excluded, with the reason;
 - a summary: slots filled out of total.
 
 `apply` turns a run into assignments in one transaction: `proposed` on a draft, `offered` on an approved mission.
@@ -310,7 +315,7 @@ Principles:
 - Commands are noun then verb, and mirror the API.
 - Default output is a readable table or summary; `--json` on every command gives the raw API response.
 - Colour and spinners only when writing to a terminal.
-- Errors print the API's message and hint, then exit non-zero: `1` general, `2` usage, `3` not logged in, `4` forbidden, `5` not found, `6` conflict.
+- Errors print the API's message and hint, then exit non-zero: `1` general or the API cannot be reached, `2` usage or invalid input (400, 422), `3` not logged in (401), `4` forbidden (403), `5` not found (404), `6` conflict (409). A refused transition, such as a submit blocked by a clash or an unfilled slot, is a conflict.
 - Named profiles make role switching one flag: `--profile`, or `MCTL_PROFILE`. Every command says who it ran as.
 - Destructive commands ask for confirmation unless `--yes` is given.
 - After a successful command, print the likely next command.
@@ -547,7 +552,7 @@ Artemis crew. Only Ada, Mina and Quin have users; the rest are crew records with
 |---|---|---|---|
 | CRW-1 | Ada Reyes | pilot 5, medic 4 | Proposed on both clashing drafts |
 | CRW-2 | Ben Osei | pilot 4 | |
-| CRW-3 | Mina Farouk | medic 4, engineer 3 | Held by Phobos Survey in June |
+| CRW-3 | Mina Farouk | medic 4, engineer 3 | On Lunar Gateway Resupply; held by Phobos Survey in June |
 | CRW-4 | Noor Haddad | engineer 5, medic 3 | Medic certification expires 10 Mar 2027 |
 | CRW-5 | Omar Vance | medic 5 | Availability blocks 5–12 Mar and 1–30 Jun 2027 |
 | CRW-6 | Kira Novak | engineer 5, medic 3 | On Lunar Gateway Resupply |
@@ -562,7 +567,7 @@ Artemis missions.
 
 | Ref | Mission | Period | Status | Owner | What it shows |
 |---|---|---|---|---|---|
-| MSN-1 | Lunar Gateway Resupply | 15 Oct 2026 – 10 Feb 2027 | active | Sam | Accepted crew who are held; a recent workload for Kira, Leo and Cy |
+| MSN-1 | Lunar Gateway Resupply | 15 Oct 2026 – 10 Feb 2027 | active | Sam | Accepted crew who are held; a recent workload for Kira, Leo, Cy and Mina |
 | MSN-2 | Mars Relay Repair | 1–25 Sep 2026 | completed | Priya | History |
 | MSN-3 | Phobos Survey | 1–30 Jun 2027 | submitted | Priya | Held crew (Mina, Quin) excluded elsewhere; ready for a director to approve or reject |
 | MSN-4 | Ceres Resupply | 3–24 May 2027 | draft | Sam | Proposes Ada as pilot: one side of the clash (act 2) |
@@ -570,7 +575,7 @@ Artemis missions.
 | MSN-6 | Titan Relay | 4–30 Apr 2027 | draft | Sam | Needs two geologists at level 4; only Rosa qualifies, Tala is on leave, Sven is level 3: the unfilled-slot explanation |
 | MSN-7 | Io Flyby | 7–21 Jun 2027 | draft | Sam | Needs a pilot at 3 and a medic at 4. Ada is the best pilot and the only medic at 4 who is free, so filling slot by slot fails; the matcher makes Ben the pilot and Ada the medic |
 
-The reviewer's mission in act 1, Europa Survey (1–20 Mar 2027, a pilot and a medic at level 3), is therefore MSN-8. It must come out as Ada pilot and Quin medic, with Mina as the replacement when Quin declines; the seed's workloads are tuned so that it does, and the end-to-end test asserts it.
+The reviewer's mission in act 1, Europa Survey (1–20 Mar 2027, a pilot and a medic at level 3), is therefore MSN-8. It must come out as Ada pilot and Quin medic, with Mina as the replacement when Quin declines. Mina is the stronger medic, but her time on Lunar Gateway Resupply, which ends 19 days before, puts her below Quin; that is the fairness trade-off of section 6.4 shown on real data. The end-to-end test asserts it.
 
 Helios missions: Solar Corona Probe, submitted, with one of two approvals given; Mercury Flyby, a draft with one slot open that can still be submitted.
 
@@ -578,7 +583,7 @@ The seed is checked by a test that runs the matcher over MSN-6, MSN-7 and the ac
 
 ## 11. Build order
 
-Each step ends with passing tests and a commit. Estimates are in minutes, working with a coding agent, and include the step's tests from section 10; all five kinds of test in that section are part of the core.
+Each step ends with passing tests and a commit. Estimates are in minutes, working with a coding agent, and include the step's tests from section 10; every kind of test in that section is part of the core.
 
 | Step | Minutes |
 |---|---|
@@ -596,13 +601,27 @@ Stretch, in order, if time remains: row-level security policies (60–90), then 
 
 ## 12. How the design extends
 
-- **Resource constraints** (vehicles, equipment, budgets): a resource becomes another schedulable entity with the same exclusion-constraint pattern, and its limits become hard constraints in the matcher's list. Limits that span the team move the solver from assignment to integer programming behind the same interface.
-- **Different approval workflows** (multi-stage, by mission size, delegated approvers): the policy grows from a single number into an ordered list of stages, each naming who may approve, and only `approvalState` changes; `mission_approvals` already records each decision against its submission.
+### Resource constraints
+
+A mission needs vehicles, equipment or a budget as well as crew.
+
+- **Added.** A `resources` table (per organisation, with a kind and a quantity or a single unit), `mission_resource_requirements` beside `mission_requirements`, and `resource_bookings` beside `assignments`. A unit resource such as one vehicle gets the same exclusion constraint as a crew member: no two live bookings overlap. Bookings follow the same statuses, so a draft plans a vehicle and a submitted mission holds it, and a clash over a vehicle is the same idea as a clash over a person.
+- **Changed.** The proposal check gains resource problems. The matcher gains hard constraints through its existing list, for example "this crew member is certified for the booked vehicle". Unit resources can be matched by a second, independent run of the same solver.
+- **Where it stops fitting.** A limit across the whole team, such as a budget over the sum of crew day rates or a mass limit over everyone chosen, cannot be expressed as a cost per pair. That moves the solver from assignment to integer programming, behind the same `match(input) → result` interface, so the API, the saved run and the CLI output are untouched.
+- **Untouched.** The lifecycle table, the approval policy and tenant isolation.
+
+### Different approval workflows
+
+Approval in stages, by mission size, or by named approvers.
+
+- **Changed.** The policy grows from `{ approvals_required }` into an ordered list of stages, each saying who may approve and how many are needed, optionally chosen by a condition on the mission (length, crew size). `approvalState(policy, approvals)` returns the current stage as well as pending or approved. `mission_approvals` gains a stage number.
+- **Already in place.** Approvals are recorded one by one against a submission; a rejection ends the submission; the approver is never the submitter; submit already refuses a mission whose policy cannot be met by the directors who exist. Each of these carries over to stages unchanged.
+- **Untouched.** The lifecycle table still has one `approve` transition that stays in `submitted` until the policy is met. Assignments, the matcher and the CLI's commands do not change; `mctl mission show` prints the stage.
+- **Re-approval after a crew change** is a further policy field: a refill after a decline starts a new submission when the organisation asks for it.
+
+### Smaller extensions
+
 - **Crew choosing between missions**: when two drafts clash over a crew member, let that crew member see both and state a preference before either is submitted. It needs a new response and a new visibility rule for drafts.
+- **Telling a director about a long-standing clash**: two drafts can block each other for as long as neither mission lead acts. A director can see clashes in `mctl mission list` and remove the crew member from either draft; being told needs notifications, which are a non-goal of this build.
+- **Two requirements for one skill** at different levels, such as one senior pilot and two junior ones.
 - **Scale**: the matcher loads only crew who hold a required skill; if organisations reach thousands of crew, shortlist per slot before solving.
-
-## 13. Open questions
-
-1. Should a crew member see who else is on their mission? Current answer: no.
-2. Should a director be told when a clash has stood for a long time? Current answer: not in this build; drafts no longer hold crew, so a stale draft only blocks itself and any draft it clashes with.
-3. Should a director be able to override a hard constraint with a recorded reason? Current answer: no; they remove the blocking record instead.
