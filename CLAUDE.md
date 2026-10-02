@@ -12,6 +12,7 @@ A multi-tenant API and a CLI (`mctl`) where space organisations plan missions an
 ```
 pnpm demo:setup      # start Postgres (port 54329), create roles and databases, migrate, seed, build
 pnpm demo:reset      # reseed
+pnpm api             # run the API (port 3000, or PORT in .env)
 pnpm test            # unit tests; no database
 pnpm test:int        # integration tests, against the test database
 pnpm build           # typecheck every package

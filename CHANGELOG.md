@@ -29,6 +29,14 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `Makefile` wrapping the common setup, test and database commands.
 - `CLAUDE.md` and `docs/agents/` describing the issue tracker, triage labels and domain docs for coding agents.
 - GitHub Actions workflow (`CI`) that typechecks, checks the migrations match the schema, and runs the unit and integration tests against Postgres on every pull request and on `main`.
+- HTTP API (`pnpm api`, Hono) with `POST /v1/auth/login`, `GET /v1/me`, `GET /v1/org` and `GET /v1/health`.
+- Login by organisation slug, email and password, returning a signed token valid for `TOKEN_TTL` (12 hours by default). Every failed login gives the same answer, and the lookup goes through one privileged database function.
+- Every authenticated request runs in one database transaction, as the API role, with `app.org_id` set from the token for that transaction only. Any error, or any response of 400 or above, rolls it back.
+- One policy module declaring who may do what. Routes are declared with the permission they need, and the request pipeline refuses to run a handler registered without one. Typed domain errors are rendered by one handler in a single error shape.
+- Every request checks that the token's user still exists, so a removed user's token stops working at once.
+- A test of the code structure rules: modules reach the database only through the request's transaction, and services and repositories import no HTTP.
+- Request and response schemas and error codes in the `contract` package.
+- Tenant isolation tests: a sweep that calls every route as each organisation and finds nothing of the other, and a coverage test that fails when a route is missing from the sweep.
 - `CODING_STANDARDS.md`: the rules for writing code here, each with the reason it was adopted.
 - `README.md` with setup steps and a log of where the build diverged from the design.
 
