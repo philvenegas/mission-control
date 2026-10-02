@@ -13,6 +13,16 @@ The deliverable is a multi-tenant HTTP API and a CLI (`mctl`) that exercises eve
 
 One vertical slice, end to end: a mission lead creates a mission, defines requirements, runs the matcher, applies the proposal and submits; a director approves; crew accept or decline; the lead fills any gap and launches the mission.
 
+### Built, stretch, and designed only
+
+The build target is five hours; running one to two hours over is acceptable. Section 11 gives the estimate per step.
+
+- **Core (built):** everything in this document not listed below. Protected areas, built properly: the matcher and its explanation, the lifecycle with the self-approval rule, a proof of tenant isolation, and the CLI walk-through. Administration is thin: the skill taxonomy, organisation settings and users are seeded and read-only.
+- **Stretch (built if time remains, in this order):** row-level security policies; `--pin` and `--exclude` on a match run. The core is built so that row-level security is purely additive (section 5).
+- **Designed, not built:** organisation settings endpoints, the `withdraw` transition, the minimum rest gap between missions.
+
+Text elsewhere marks these items as *(stretch)* or *(designed, not built)*.
+
 ### Non-goals
 
 - Real identity provider, password reset, invitations. Users are seeded.
@@ -28,7 +38,7 @@ One vertical slice, end to end: a mission lead creates a mission, defines requir
 |---|---|---|---|
 | D1 | TypeScript monorepo: `api`, `cli`, `contract`, `matcher` | One language; the CLI and API share request and response schemas, so they cannot drift | Separate repos or languages |
 | D2 | Postgres, shared schema, `org_id` on every table | Standard for B2B at this scale; lets the database enforce isolation and booking rules | Schema or database per tenant: heavier operations for no gain here |
-| D3 | Tenant isolation in two layers: scoped data access plus row-level security | "Data must never leak" should not depend on every query remembering a `WHERE` clause | Application-only filtering |
+| D3 | Tenant isolation in two layers: scoped data access with composite keys (core), plus row-level security (stretch) | "Data must never leak" should not depend on every query remembering a `WHERE` clause | Application-only filtering as the end state |
 | D4 | Tenant and role come only from the signed token | A client can never name another tenant in a URL or body | `/orgs/:id/...` routes |
 | D5 | `User` and `CrewMember` are separate, optionally linked | Crew are schedulable resources even without a login; leads and directors are not crew by default | One table with nullable profile fields |
 | D6 | Skills, score weights and approval policy are per-organisation data | The brief says organisations differ in taxonomy and approval process | Global skill list, hard-coded policy |
@@ -42,11 +52,11 @@ One vertical slice, end to end: a mission lead creates a mission, defines requir
 
 ## 3. Domain model
 
-All tables carry `org_id`. Foreign keys between tenant tables are composite `(org_id, id)`, so a row can never reference another tenant's row even if application code is wrong.
+Every table carries its own `org_id` column, including the child tables below whose key fields omit it for brevity (`crew_skills`, `availability_blocks`, `mission_requirements`, `assignments`, `mission_approvals`, `mission_events`, `match_runs`). One tenant rule then fits every table. Foreign keys between tenant tables are composite `(org_id, id)`, so a row can never reference another tenant's row even if application code is wrong.
 
 | Table | Key fields | Notes |
 |---|---|---|
-| `organisations` | `id`, `name`, `slug`, `settings` | `settings`: `approvals_required` (default 1), `min_rest_days` (default 0), `match_weights` |
+| `organisations` | `id`, `name`, `slug`, `settings` | `settings`: `approvals_required` (default 1), `min_rest_days` (default 0; designed, not built), `match_weights`. Seeded; read-only in the core |
 | `users` | `id`, `org_id`, `email` (globally unique), `password_hash`, `name`, `role` | `role`: `director`, `mission_lead`, `crew_member` |
 | `crew_members` | `id`, `org_id`, `ref`, `user_id` (nullable, unique), `name`, `status` | `status`: `active`, `inactive` |
 | `skills` | `id`, `org_id`, `name`, `category` | Unique on `(org_id, name)` |
@@ -82,7 +92,7 @@ draft ──submit──▶ submitted ──approve──▶ approved ──laun
 | Transition | Who | Guard | Effect |
 |---|---|---|---|
 | `submit` | Owner (lead) or director | At least one requirement; period in the future; every slot has a proposed crew member | Sets `submitted_by` |
-| `withdraw` | Submitter | — | Back to `draft` |
+| `withdraw` *(designed, not built)* | Submitter | — | Back to `draft` |
 | `reject` | Director, not the submitter | Note required | Back to `draft`; assignments stay `proposed` |
 | `approve` | Director, not the submitter | Has not already approved this submission | Records approval. When approvals reach `approvals_required`: status `approved`, assignments `proposed → offered` |
 | `launch` | Owner or director | Every slot `accepted` | Status `active` |
@@ -103,8 +113,8 @@ The whole table lives in one module (`lifecycle.ts`) as data: `{ from, to, roles
 
 | Capability | Director | Mission lead | Crew member |
 |---|---|---|---|
-| Organisation settings, users | Manage | — | — |
-| Skills taxonomy | Manage | Read | Read |
+| Organisation settings, users | Read (seeded; managing them is designed, not built) | — | — |
+| Skills taxonomy | Read (seeded) | Read | Read |
 | Crew profiles | Manage all | Read all | Read and edit own |
 | Availability | Manage all | Read all | Manage own |
 | Missions | Read all, create, edit any draft | Read all, create, edit own drafts | Read only missions they are assigned to (name, period, own slot) |
@@ -118,7 +128,15 @@ Permissions are declared in one policy module and checked by one middleware. A r
 
 ### Authentication
 
-`POST /v1/auth/login` takes email and password and returns a signed token carrying user id, `org_id` and role. Every request runs inside one database transaction that first sets `app.org_id` from the token; row-level security policies compare each row's `org_id` to it. The API connects as a database role that does not own the tables, so the policies apply to it. Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by email.
+`POST /v1/auth/login` takes email and password and returns a signed token carrying user id, `org_id` and role. Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by email.
+
+The core is built ready for row-level security, so adding it later changes no existing code:
+
+- Every table has `org_id`.
+- The API connects as a separate database role that does not own the tables and cannot bypass policies. Migrations and the seed run as the owner.
+- Every request runs inside one database transaction that first sets `app.org_id` from the token, with `set_config('app.org_id', <id>, true)` so the setting ends with the transaction.
+
+In the core, repositories filter by that `org_id` and composite foreign keys reject cross-tenant references. The stretch step adds one policy per table comparing the row's `org_id` to `app.org_id`, plus a test that the API's role is neither a superuser nor able to bypass policies. Setup steps and pitfalls are in the research note `research/rls-with-drizzle.md` on the `research/rls-with-drizzle` branch.
 
 ## 6. The matching engine
 
@@ -134,9 +152,9 @@ A crew member is a candidate for a slot only if all hold:
 2. Has the skill at or above the minimum level.
 3. If `certified_until` is set, it is on or after the mission's last day.
 4. No availability block overlaps the mission period.
-5. No live assignment on another mission overlaps the period, widened by `min_rest_days` on each side.
+5. No live assignment on another mission overlaps the period. Widening the period by `min_rest_days` on each side is designed, not built.
 6. Has not declined this mission.
-7. Is not excluded by the lead for this run (`--exclude`).
+7. Is not excluded by the lead for this run (`--exclude`) *(stretch)*.
 
 Each failed check is recorded with its reason. That record is what makes the explanation possible.
 
@@ -158,11 +176,19 @@ Weights are per-organisation settings. Each component is a small pure function w
 
 ### 6.5 Solving
 
-Build a matrix of slots by crew with cost `1 − score`, or infinity where a hard constraint fails. Pad it with "leave unfilled" options that cost more than any real assignment, so the solver always fills as many slots as it can before optimising quality. Solve with the Hungarian algorithm. It is exact and cubic in the matrix size, which is instant for hundreds of crew.
+Solve with a hand-written Hungarian algorithm (shortest-augmenting-path form, about 50 lines). It is exact and cubic in the matrix size, which is instant for hundreds of crew. No library is used: none treats a forbidden pair as forbidden, and none promises which of several equal answers it returns.
 
-Crew already `offered` or `accepted` on the mission are fixed in place; only open slots are solved. The lead can also fix someone with `--pin`.
+For `S` slots and `C` crew, build an `S × (C + S)` matrix of whole-number costs:
 
-Inputs are sorted by reference before solving, so the same data always gives the same result.
+- an allowed pair costs `round((1 − score) × 1,000,000)`;
+- each slot has its own "unfilled" column costing `UNFILLED = S × 1,000,000 + 1`, more than any sum of real costs, so filling one more slot always wins over quality;
+- a forbidden pair, and any other slot's "unfilled" column, costs `2 × UNFILLED`.
+
+A slot whose answer is a column at or beyond `C` is unfilled. Infinity is never passed to the solver.
+
+Crew already `offered` or `accepted` on the mission are fixed in place; only open slots are solved. The lead can also fix someone with `--pin` *(stretch)*.
+
+Slots and crew are sorted by reference before the matrix is built, costs are whole numbers, and comparisons are strict, so the same data always gives the same result.
 
 ### 6.6 Output
 
@@ -184,13 +210,13 @@ REST over JSON, prefix `/v1`. No organisation identifier appears in any path.
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /auth/login`, `GET /me` |
-| Organisation | `GET /org`, `PATCH /org/settings` |
-| Skills | `GET /skills`, `POST /skills` |
+| Organisation | `GET /org`; `PATCH /org/settings` *(designed, not built)* |
+| Skills | `GET /skills` (the taxonomy is seeded) |
 | Crew | `GET /crew`, `POST /crew`, `GET /crew/:ref`, `PATCH /crew/:ref`, `PUT /crew/:ref/skills/:skill`, `DELETE /crew/:ref/skills/:skill` |
 | Availability | `GET /crew/:ref/availability`, `POST /crew/:ref/availability`, `DELETE /availability/:id` |
 | Missions | `GET /missions`, `POST /missions`, `GET /missions/:ref`, `PATCH /missions/:ref`, `GET /missions/:ref/events` |
 | Requirements | `POST /missions/:ref/requirements`, `DELETE /missions/:ref/requirements/:id` |
-| Lifecycle | `POST /missions/:ref/{submit,withdraw,approve,reject,launch,complete,cancel}` |
+| Lifecycle | `POST /missions/:ref/{submit,approve,reject,launch,complete,cancel}`; `withdraw` *(designed, not built)* |
 | Matching | `POST /missions/:ref/match`, `GET /match-runs/:id`, `POST /match-runs/:id/apply` |
 | Assignments | `GET /assignments` (own, for crew), `POST /assignments/:id/{accept,decline}`, `DELETE /assignments/:id` |
 
@@ -243,7 +269,7 @@ mctl mission launch MSN-4
 mctl mission history MSN-4              # the audit trail
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list|add`, `mctl mission list|show|reject|cancel|complete`, `mctl org settings`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|reject|cancel|complete`, `mctl org show`.
 
 `mctl match run` is the centrepiece and its output gets the most design attention: one row per slot with crew, score and component bars; alternates indented beneath; unfilled slots in a separate block with the reason counts and nearest miss.
 
@@ -289,18 +315,21 @@ Seed data: two organisations with different skill taxonomies and settings (one n
 
 ## 11. Build order
 
-Each step ends with passing tests and a commit.
+Each step ends with passing tests and a commit. Estimates are in minutes, working with a coding agent, and include the step's tests from section 10; all five kinds of test in that section are part of the core.
 
-1. Workspace, Docker Postgres, schema, migrations, row-level security, seed.
-2. Login, tenant-scoped transaction middleware, policy module, isolation tests.
-3. Skills, crew and availability endpoints.
-4. Missions, requirements and the lifecycle table.
-5. Matcher package, in isolation, with its tests.
-6. Match run and apply, assignments, accept and decline, exclusion constraint test.
-7. CLI: login and profiles, then commands in walk-through order.
-8. End-to-end script, README, seed polish.
+| Step | Minutes |
+|---|---|
+| 1. Workspace, Docker Postgres, owner and API database roles, schema with `org_id` on every table, migrations, seed | 45 |
+| 2. Login, tenant-scoped transaction middleware, policy module, isolation tests | 50 |
+| 3. Skill list; crew add, show, list, set skill; availability add, list, remove | 15 |
+| 4. Missions, requirements and the lifecycle table | 35 |
+| 5. Matcher package, in isolation, with its tests | 40 |
+| 6. Match run and apply, assignments, accept and decline, double-booking test | 30 |
+| 7. CLI: login and profiles, then commands in walk-through order | 40 |
+| 8. End-to-end script, README, seed polish | 30 |
+| **Core** | **285** |
 
-If time runs short, cut in this order: two-approval policy, `--pin` and `--exclude`, organisation settings endpoints, alternates in the match output.
+Stretch, in order, if time remains: row-level security policies (60–90), then `--pin` and `--exclude` (15).
 
 ## 12. How the design extends
 
