@@ -92,7 +92,8 @@ CREATE TABLE "mission_events" (
 	"to_status" text,
 	"note" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "mission_events_org_id_id" UNIQUE("org_id","id")
+	CONSTRAINT "mission_events_org_id_id" UNIQUE("org_id","id"),
+	CONSTRAINT "mission_events_type" CHECK ("mission_events"."type" IN ('submit', 'withdraw', 'approve', 'reject', 'launch', 'complete', 'cancel', 'clash'))
 );
 --> statement-breakpoint
 CREATE TABLE "mission_requirements" (
@@ -103,6 +104,7 @@ CREATE TABLE "mission_requirements" (
 	"min_level" integer NOT NULL,
 	"headcount" integer DEFAULT 1 NOT NULL,
 	CONSTRAINT "mission_requirements_org_id_id" UNIQUE("org_id","id"),
+	CONSTRAINT "mission_requirements_org_id_mission_id_id" UNIQUE("org_id","mission_id","id"),
 	CONSTRAINT "mission_requirements_mission_skill" UNIQUE("mission_id","skill_id"),
 	CONSTRAINT "mission_requirements_min_level" CHECK ("mission_requirements"."min_level" BETWEEN 1 AND 5),
 	CONSTRAINT "mission_requirements_headcount" CHECK ("mission_requirements"."headcount" >= 1)
@@ -122,6 +124,7 @@ CREATE TABLE "missions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "missions_org_id_id" UNIQUE("org_id","id"),
 	CONSTRAINT "missions_org_id_ref" UNIQUE("org_id","ref"),
+	CONSTRAINT "missions_org_id_id_period" UNIQUE("org_id","id","period"),
 	CONSTRAINT "missions_status" CHECK ("missions"."status" IN ('draft', 'submitted', 'approved', 'active', 'completed', 'cancelled')),
 	CONSTRAINT "missions_period" CHECK (NOT isempty("missions"."period"))
 );
@@ -130,7 +133,7 @@ CREATE TABLE "organisations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
 	"slug" text NOT NULL,
-	"settings" jsonb NOT NULL,
+	"settings" jsonb DEFAULT '{"approvals_required":1,"allow_unfilled_submission":false,"min_rest_days":0,"match_weights":{"proficiency":0.45,"workload":0.35,"rest":0.2}}'::jsonb NOT NULL,
 	"last_mission_ref" integer DEFAULT 0 NOT NULL,
 	"last_crew_member_ref" integer DEFAULT 0 NOT NULL,
 	"last_assignment_ref" integer DEFAULT 0 NOT NULL,
@@ -163,8 +166,8 @@ CREATE TABLE "users" (
 );
 --> statement-breakpoint
 ALTER TABLE "assignments" ADD CONSTRAINT "assignments_org_id_organisations_id_fk" FOREIGN KEY ("org_id") REFERENCES "public"."organisations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "assignments" ADD CONSTRAINT "assignments_mission_fk" FOREIGN KEY ("org_id","mission_id") REFERENCES "public"."missions"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "assignments" ADD CONSTRAINT "assignments_requirement_fk" FOREIGN KEY ("org_id","requirement_id") REFERENCES "public"."mission_requirements"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "assignments" ADD CONSTRAINT "assignments_mission_fk" FOREIGN KEY ("org_id","mission_id","period") REFERENCES "public"."missions"("org_id","id","period") ON DELETE no action ON UPDATE cascade;--> statement-breakpoint
+ALTER TABLE "assignments" ADD CONSTRAINT "assignments_requirement_fk" FOREIGN KEY ("org_id","mission_id","requirement_id") REFERENCES "public"."mission_requirements"("org_id","mission_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "assignments" ADD CONSTRAINT "assignments_crew_member_fk" FOREIGN KEY ("org_id","crew_member_id") REFERENCES "public"."crew_members"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "assignments" ADD CONSTRAINT "assignments_match_run_fk" FOREIGN KEY ("org_id","match_run_id") REFERENCES "public"."match_runs"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "assignments" ADD CONSTRAINT "assignments_created_by_fk" FOREIGN KEY ("org_id","created_by") REFERENCES "public"."users"("org_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

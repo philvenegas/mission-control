@@ -1,6 +1,6 @@
 {
-  "id": "356685cf-678b-4acf-b3c1-d0d4cc698e22",
-  "prevId": "4ba2702e-1d4d-4b55-8455-6902f01af872",
+  "id": "8d51f772-1468-414b-bab3-b2e08d1b19e5",
+  "prevId": "f5919f39-2d03-4dd3-8891-45d8b2f08f93",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -109,14 +109,16 @@
           "tableFrom": "assignments",
           "columnsFrom": [
             "org_id",
-            "mission_id"
+            "mission_id",
+            "period"
           ],
           "tableTo": "missions",
           "columnsTo": [
             "org_id",
-            "id"
+            "id",
+            "period"
           ],
-          "onUpdate": "no action",
+          "onUpdate": "cascade",
           "onDelete": "no action"
         },
         "assignments_requirement_fk": {
@@ -124,11 +126,13 @@
           "tableFrom": "assignments",
           "columnsFrom": [
             "org_id",
+            "mission_id",
             "requirement_id"
           ],
           "tableTo": "mission_requirements",
           "columnsTo": [
             "org_id",
+            "mission_id",
             "id"
           ],
           "onUpdate": "no action",
@@ -911,7 +915,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "mission_events_type": {
+          "name": "mission_events_type",
+          "value": "\"mission_events\".\"type\" IN ('submit', 'withdraw', 'approve', 'reject', 'launch', 'complete', 'cancel', 'clash')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.mission_requirements": {
@@ -1009,6 +1018,15 @@
           "name": "mission_requirements_org_id_id",
           "columns": [
             "org_id",
+            "id"
+          ],
+          "nullsNotDistinct": false
+        },
+        "mission_requirements_org_id_mission_id_id": {
+          "name": "mission_requirements_org_id_mission_id_id",
+          "columns": [
+            "org_id",
+            "mission_id",
             "id"
           ],
           "nullsNotDistinct": false
@@ -1174,6 +1192,15 @@
             "ref"
           ],
           "nullsNotDistinct": false
+        },
+        "missions_org_id_id_period": {
+          "name": "missions_org_id_id_period",
+          "columns": [
+            "org_id",
+            "id",
+            "period"
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1216,7 +1243,8 @@
           "name": "settings",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": "'{\"approvals_required\":1,\"allow_unfilled_submission\":false,\"min_rest_days\":0,\"match_weights\":{\"proficiency\":0.45,\"workload\":0.35,\"rest\":0.2}}'::jsonb"
         },
         "last_mission_ref": {
           "name": "last_mission_ref",

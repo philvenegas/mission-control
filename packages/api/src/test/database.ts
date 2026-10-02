@@ -24,4 +24,5 @@ export async function errorCode(query: PromiseLike<unknown>): Promise<string | n
 
 export const FOREIGN_KEY_VIOLATION = '23503';
 export const EXCLUSION_VIOLATION = '23P01';
+export const CHECK_VIOLATION = '23514';
 export const INSUFFICIENT_PRIVILEGE = '42501';

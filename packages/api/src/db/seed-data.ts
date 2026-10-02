@@ -1,25 +1,34 @@
-import type { MissionStatus, OrgSettings, Role } from '@mission-control/contract';
+import {
+  DEFAULT_MATCH_WEIGHTS,
+  DEFAULT_ORG_SETTINGS,
+  type MissionStatus,
+  type OrgSettings,
+  type Role,
+} from '@mission-control/contract';
 
 // The demo data, as DESIGN.md section 10 specifies it. People are named by first name, which is
-// unique within an organisation here. Dates are written as they fall when SEED_BASE_DATE is
-// 2026-10-01 and move with it. A period's end is exclusive.
+// unique within an organisation here.
+
+/** Every seeded date is a number of days from this one. Move it forward once the 2027 dates pass. */
+export const SEED_BASE_DATE = '2026-10-01';
 
 export interface CrewSeed {
   name: string;
   /** Has a user, and so can log in. */
   login?: boolean;
-  skills: Record<string, number | { level: number; certifiedUntil: string }>;
-  blocks?: { from: string; to: string; reason: string }[];
+  skills: Record<string, number | { level: number; certifiedUntilDay: number }>;
+  blocks?: { fromDay: number; toDay: number; reason: string }[];
 }
 
 export interface MissionSeed {
   name: string;
   description: string;
-  from: string;
-  to: string;
-  status: MissionStatus;
+  /** The period, in days from SEED_BASE_DATE; the end is exclusive. */
+  fromDay: number;
+  toDay: number;
+  status: Exclude<MissionStatus, 'cancelled'>;
   owner: string;
-  /** Directors who approved the current submission. */
+  /** Directors who have approved the current submission. */
   approvedBy?: string[];
   requirements: { skill: string; minLevel: number; headcount?: number; crew?: string[] }[];
 }
@@ -37,12 +46,7 @@ export interface OrgSeed {
 const artemis: OrgSeed = {
   name: 'Artemis',
   slug: 'artemis',
-  settings: {
-    approvals_required: 1,
-    allow_unfilled_submission: false,
-    min_rest_days: 0,
-    match_weights: { proficiency: 0.45, workload: 0.35, rest: 0.2 },
-  },
+  settings: DEFAULT_ORG_SETTINGS,
   skills: {
     pilot: 'flight',
     navigator: 'flight',
@@ -61,13 +65,14 @@ const artemis: OrgSeed = {
     { name: 'Ada Reyes', login: true, skills: { pilot: 5, medic: 4 } },
     { name: 'Ben Osei', skills: { pilot: 4 } },
     { name: 'Mina Farouk', login: true, skills: { medic: 4, engineer: 3 } },
-    { name: 'Noor Haddad', skills: { engineer: 5, medic: { level: 3, certifiedUntil: '2027-03-10' } } },
+    // Her medic certification expires on 10 Mar 2027.
+    { name: 'Noor Haddad', skills: { engineer: 5, medic: { level: 3, certifiedUntilDay: 160 } } },
     {
       name: 'Omar Vance',
       skills: { medic: 5 },
       blocks: [
-        { from: '2027-03-05', to: '2027-03-12', reason: 'Training course' },
-        { from: '2027-06-01', to: '2027-06-30', reason: 'Parental leave' },
+        { fromDay: 155, toDay: 162, reason: 'Training course' }, // 5–12 Mar 2027
+        { fromDay: 243, toDay: 272, reason: 'Parental leave' }, // 1–30 Jun 2027
       ],
     },
     { name: 'Kira Novak', skills: { engineer: 5, medic: 3 } },
@@ -79,15 +84,15 @@ const artemis: OrgSeed = {
     {
       name: 'Tala Moreno',
       skills: { geologist: 5 },
-      blocks: [{ from: '2027-04-01', to: '2027-04-14', reason: 'Leave' }],
+      blocks: [{ fromDay: 182, toDay: 195, reason: 'Leave' }], // 1–14 Apr 2027
     },
   ],
   missions: [
     {
       name: 'Lunar Gateway Resupply',
       description: 'Cargo and crew rotation for the gateway station.',
-      from: '2026-10-15',
-      to: '2027-02-10',
+      fromDay: 14, // 15 Oct 2026
+      toDay: 132, // 10 Feb 2027
       status: 'active',
       owner: 'Sam',
       approvedBy: ['Dana'],
@@ -102,8 +107,8 @@ const artemis: OrgSeed = {
     {
       name: 'Mars Relay Repair',
       description: 'Replace the failed transponder on the Mars relay.',
-      from: '2026-09-01',
-      to: '2026-09-25',
+      fromDay: -30, // 1 Sep 2026
+      toDay: -6, // 25 Sep 2026
       status: 'completed',
       owner: 'Priya',
       approvedBy: ['Marcus'],
@@ -115,8 +120,8 @@ const artemis: OrgSeed = {
     {
       name: 'Phobos Survey',
       description: 'Surface survey ahead of the sample-return programme.',
-      from: '2027-06-01',
-      to: '2027-06-30',
+      fromDay: 243, // 1 Jun 2027
+      toDay: 272, // 30 Jun 2027
       status: 'submitted',
       owner: 'Priya',
       requirements: [{ skill: 'medic', minLevel: 3, headcount: 2, crew: ['Mina', 'Quin'] }],
@@ -124,8 +129,8 @@ const artemis: OrgSeed = {
     {
       name: 'Ceres Resupply',
       description: 'Supplies for the Ceres outpost.',
-      from: '2027-05-03',
-      to: '2027-05-24',
+      fromDay: 214, // 3 May 2027
+      toDay: 235, // 24 May 2027
       status: 'draft',
       owner: 'Sam',
       requirements: [
@@ -136,8 +141,8 @@ const artemis: OrgSeed = {
     {
       name: 'Vesta Mapping',
       description: 'Orbital mapping of Vesta.',
-      from: '2027-05-10',
-      to: '2027-05-31',
+      fromDay: 221, // 10 May 2027
+      toDay: 242, // 31 May 2027
       status: 'draft',
       owner: 'Priya',
       requirements: [
@@ -148,8 +153,8 @@ const artemis: OrgSeed = {
     {
       name: 'Titan Relay',
       description: 'Place a relay and sample the surface.',
-      from: '2027-04-04',
-      to: '2027-04-30',
+      fromDay: 185, // 4 Apr 2027
+      toDay: 211, // 30 Apr 2027
       status: 'draft',
       owner: 'Sam',
       requirements: [{ skill: 'geologist', minLevel: 4, headcount: 2 }],
@@ -157,8 +162,8 @@ const artemis: OrgSeed = {
     {
       name: 'Io Flyby',
       description: 'A fast pass over Io.',
-      from: '2027-06-07',
-      to: '2027-06-21',
+      fromDay: 249, // 7 Jun 2027
+      toDay: 263, // 21 Jun 2027
       status: 'draft',
       owner: 'Sam',
       requirements: [
@@ -173,10 +178,10 @@ const helios: OrgSeed = {
   name: 'Helios Labs',
   slug: 'helios',
   settings: {
+    ...DEFAULT_ORG_SETTINGS,
     approvals_required: 2,
     allow_unfilled_submission: true,
-    min_rest_days: 0,
-    match_weights: { proficiency: 0.6, workload: 0.25, rest: 0.15 },
+    match_weights: { ...DEFAULT_MATCH_WEIGHTS, proficiency: 0.6, workload: 0.25, rest: 0.15 },
   },
   skills: {
     'flight operations': 'operations',
@@ -205,8 +210,8 @@ const helios: OrgSeed = {
     {
       name: 'Solar Corona Probe',
       description: 'Spectral readings from inside the corona.',
-      from: '2027-02-01',
-      to: '2027-02-28',
+      fromDay: 123, // 1 Feb 2027
+      toDay: 150, // 28 Feb 2027
       status: 'submitted',
       owner: 'Farid',
       // One of the two approvals Helios Labs requires.
@@ -219,8 +224,8 @@ const helios: OrgSeed = {
     {
       name: 'Mercury Flyby',
       description: 'Robotic sampling during a Mercury pass.',
-      from: '2027-04-05',
-      to: '2027-04-26',
+      fromDay: 186, // 5 Apr 2027
+      toDay: 207, // 26 Apr 2027
       status: 'draft',
       owner: 'Farid',
       requirements: [

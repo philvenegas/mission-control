@@ -1,13 +1,23 @@
-import type {
-  ApprovalDecision,
-  AssignmentStatus,
-  CrewStatus,
-  MatchWeights,
-  MissionStatus,
-  OrgSettings,
-  Role,
+import {
+  APPROVAL_DECISIONS,
+  type ApprovalDecision,
+  ASSIGNMENT_STATUSES,
+  type AssignmentStatus,
+  CREW_STATUSES,
+  type CrewStatus,
+  DEFAULT_ORG_SETTINGS,
+  type MatchWeights,
+  MAX_LEVEL,
+  MIN_LEVEL,
+  MISSION_EVENT_TYPES,
+  MISSION_STATUSES,
+  type MissionEventType,
+  type MissionStatus,
+  type OrgSettings,
+  ROLES,
+  type Role,
 } from '@mission-control/contract';
-import { sql } from 'drizzle-orm';
+import { type Column, sql } from 'drizzle-orm';
 import {
   check,
   customType,
@@ -32,6 +42,10 @@ const orgId = () =>
   uuid('org_id')
     .notNull()
     .references(() => organisations.id);
+/** A check that a column holds one of the contract's values, so the two cannot drift apart. */
+const oneOf = (column: Column, values: readonly string[]) =>
+  sql`${column} IN (${sql.raw(values.map((value) => `'${value}'`).join(', '))})`;
+const validLevel = (column: Column) => sql`${column} BETWEEN ${sql.raw(String(MIN_LEVEL))} AND ${sql.raw(String(MAX_LEVEL))}`;
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 
 // Every tenant table has `org_id` and a unique `(org_id, id)`, and every foreign key between
@@ -41,7 +55,7 @@ export const organisations = pgTable('organisations', {
   id: id(),
   name: text('name').notNull(),
   slug: text('slug').notNull().unique(),
-  settings: jsonb('settings').$type<OrgSettings>().notNull(),
+  settings: jsonb('settings').$type<OrgSettings>().notNull().default(DEFAULT_ORG_SETTINGS),
   // The last reference number given out, per kind. Taken inside the creating transaction.
   lastMissionRef: integer('last_mission_ref').notNull().default(0),
   lastCrewMemberRef: integer('last_crew_member_ref').notNull().default(0),
@@ -65,7 +79,7 @@ export const users = pgTable(
   (t) => [
     unique('users_org_id_id').on(t.orgId, t.id),
     unique('users_org_id_email').on(t.orgId, t.email),
-    check('users_role', sql`${t.role} IN ('director', 'mission_lead', 'crew_member')`),
+    check('users_role', oneOf(t.role, ROLES)),
   ],
 );
 
@@ -84,7 +98,7 @@ export const crewMembers = pgTable(
     unique('crew_members_org_id_id').on(t.orgId, t.id),
     unique('crew_members_org_id_ref').on(t.orgId, t.ref),
     foreignKey({ name: 'crew_members_user_fk', columns: [t.orgId, t.userId], foreignColumns: [users.orgId, users.id] }),
-    check('crew_members_status', sql`${t.status} IN ('active', 'inactive')`),
+    check('crew_members_status', oneOf(t.status, CREW_STATUSES)),
   ],
 );
 
@@ -116,7 +130,7 @@ export const crewSkills = pgTable(
       foreignColumns: [crewMembers.orgId, crewMembers.id],
     }),
     foreignKey({ name: 'crew_skills_skill_fk', columns: [t.orgId, t.skillId], foreignColumns: [skills.orgId, skills.id] }),
-    check('crew_skills_level', sql`${t.level} BETWEEN 1 AND 5`),
+    check('crew_skills_level', validLevel(t.level)),
   ],
 );
 
@@ -167,10 +181,9 @@ export const missions = pgTable(
       columns: [t.orgId, t.submittedBy],
       foreignColumns: [users.orgId, users.id],
     }),
-    check(
-      'missions_status',
-      sql`${t.status} IN ('draft', 'submitted', 'approved', 'active', 'completed', 'cancelled')`,
-    ),
+    // Lets an assignment's foreign key carry the period, so the two cannot differ.
+    unique('missions_org_id_id_period').on(t.orgId, t.id, t.period),
+    check('missions_status', oneOf(t.status, MISSION_STATUSES)),
     check('missions_period', sql`NOT isempty(${t.period})`),
   ],
 );
@@ -187,6 +200,8 @@ export const missionRequirements = pgTable(
   },
   (t) => [
     unique('mission_requirements_org_id_id').on(t.orgId, t.id),
+    // Lets an assignment's foreign key carry the mission, so its requirement is one of that mission's.
+    unique('mission_requirements_org_id_mission_id_id').on(t.orgId, t.missionId, t.id),
     // At most one requirement per skill, so a requirement is addressed by its skill.
     unique('mission_requirements_mission_skill').on(t.missionId, t.skillId),
     foreignKey({
@@ -199,7 +214,7 @@ export const missionRequirements = pgTable(
       columns: [t.orgId, t.skillId],
       foreignColumns: [skills.orgId, skills.id],
     }),
-    check('mission_requirements_min_level', sql`${t.minLevel} BETWEEN 1 AND 5`),
+    check('mission_requirements_min_level', validLevel(t.minLevel)),
     check('mission_requirements_headcount', sql`${t.headcount} >= 1`),
   ],
 );
@@ -239,6 +254,7 @@ export const assignments = pgTable(
     requirementId: uuid('requirement_id').notNull(),
     crewMemberId: uuid('crew_member_id').notNull(),
     // Copied from the mission, so the booking rule can be a constraint on this table alone.
+    // The foreign key to the mission includes it and cascades, so it always equals the mission's period.
     period: daterange('period').notNull(),
     status: text('status').$type<AssignmentStatus>().notNull(),
     score: doublePrecision('score'),
@@ -253,13 +269,13 @@ export const assignments = pgTable(
     unique('assignments_org_id_ref').on(t.orgId, t.ref),
     foreignKey({
       name: 'assignments_mission_fk',
-      columns: [t.orgId, t.missionId],
-      foreignColumns: [missions.orgId, missions.id],
-    }),
+      columns: [t.orgId, t.missionId, t.period],
+      foreignColumns: [missions.orgId, missions.id, missions.period],
+    }).onUpdate('cascade'),
     foreignKey({
       name: 'assignments_requirement_fk',
-      columns: [t.orgId, t.requirementId],
-      foreignColumns: [missionRequirements.orgId, missionRequirements.id],
+      columns: [t.orgId, t.missionId, t.requirementId],
+      foreignColumns: [missionRequirements.orgId, missionRequirements.missionId, missionRequirements.id],
     }),
     foreignKey({
       name: 'assignments_crew_member_fk',
@@ -272,10 +288,7 @@ export const assignments = pgTable(
       foreignColumns: [matchRuns.orgId, matchRuns.id],
     }),
     foreignKey({ name: 'assignments_created_by_fk', columns: [t.orgId, t.createdBy], foreignColumns: [users.orgId, users.id] }),
-    check(
-      'assignments_status',
-      sql`${t.status} IN ('proposed', 'held', 'offered', 'accepted', 'declined', 'released')`,
-    ),
+    check('assignments_status', oneOf(t.status, ASSIGNMENT_STATUSES)),
     // The booking rule, `no_double_booking`, is an exclusion constraint added by a hand-written migration.
   ],
 );
@@ -305,7 +318,7 @@ export const missionApprovals = pgTable(
       columns: [t.orgId, t.approverId],
       foreignColumns: [users.orgId, users.id],
     }),
-    check('mission_approvals_decision', sql`${t.decision} IN ('approve', 'reject')`),
+    check('mission_approvals_decision', oneOf(t.decision, APPROVAL_DECISIONS)),
   ],
 );
 
@@ -316,7 +329,7 @@ export const missionEvents = pgTable(
     orgId: orgId(),
     missionId: uuid('mission_id').notNull(),
     actorId: uuid('actor_id').notNull(),
-    type: text('type').notNull(),
+    type: text('type').$type<MissionEventType>().notNull(),
     fromStatus: text('from_status').$type<MissionStatus>(),
     toStatus: text('to_status').$type<MissionStatus>(),
     note: text('note'),
@@ -330,7 +343,6 @@ export const missionEvents = pgTable(
       foreignColumns: [missions.orgId, missions.id],
     }),
     foreignKey({ name: 'mission_events_actor_fk', columns: [t.orgId, t.actorId], foreignColumns: [users.orgId, users.id] }),
+    check('mission_events_type', oneOf(t.type, MISSION_EVENT_TYPES)),
   ],
 );
-
-export type User = typeof users.$inferSelect;

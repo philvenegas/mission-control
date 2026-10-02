@@ -7,6 +7,9 @@
 
 API := pnpm --silent --filter @mission-control/api
 
+# The database addresses, once `make setup` has copied .env.example to .env.
+-include .env
+
 help: ## List the available commands
 	@awk 'BEGIN {FS = ":.*## "} \
 	  /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
@@ -64,7 +67,7 @@ db-seed: ## Wipe and reseed (the same as `make reset`)
 	$(API) db:seed
 
 db-psql: ## Open psql on the development database, as the owner role
-	docker compose exec postgres psql -U mc_owner -d mission_control
+	docker compose exec postgres psql "$(subst localhost:$(POSTGRES_PORT),localhost:5432,$(DATABASE_OWNER_URL))"
 
 db-destroy: ## Stop Postgres and DELETE its data volume
 	docker compose down -v
