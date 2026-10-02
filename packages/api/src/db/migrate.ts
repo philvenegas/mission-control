@@ -22,6 +22,7 @@ export async function migrateDatabase(ownerUrl: string, apiUrl: string): Promise
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${api.role};
       REVOKE UPDATE, DELETE ON ${APPEND_ONLY.join(', ')} FROM ${api.role};
       REVOKE INSERT, DELETE ON organisations FROM ${api.role};
+      GRANT EXECUTE ON FUNCTION auth_find_user(text, text) TO ${api.role};
     `);
   } finally {
     await client.end();

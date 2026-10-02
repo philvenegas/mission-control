@@ -10,12 +10,20 @@ Prerequisites: Docker, Node 22 and pnpm.
 ```
 pnpm install
 pnpm demo:setup      # start Postgres, create roles and databases, migrate, seed, build
+pnpm api             # the API on http://localhost:3000, in a terminal of its own (PORT in .env changes it)
 pnpm test            # unit tests; no database needed
 pnpm test:int        # integration tests, against a separate test database
 pnpm demo:reset      # reseed
 ```
 
 `make` lists the same commands as Makefile targets.
+
+Every seeded user has the password `mission-control-demo`. To log in:
+
+```
+curl -s -X POST localhost:3000/v1/auth/login -H 'content-type: application/json' \
+  -d '{"org":"artemis","email":"dana@artemis.example","password":"mission-control-demo"}'
+```
 
 ## Where the build diverged from the design
 
