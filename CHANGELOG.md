@@ -28,6 +28,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - Unit tests (`pnpm test`, no database) and integration tests (`pnpm test:int`, against a separate test database) covering tenant references, the booking rule, assignment integrity, the checked values, the API role's privileges and the seed.
 - `Makefile` wrapping the common setup, test and database commands.
 - `CLAUDE.md` and `docs/agents/` describing the issue tracker, triage labels and domain docs for coding agents.
+- GitHub Actions workflow (`CI`) that typechecks, checks the migrations match the schema, and runs the unit and integration tests against Postgres on every pull request and on `main`.
 - `README.md` with setup steps and a log of where the build diverged from the design.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

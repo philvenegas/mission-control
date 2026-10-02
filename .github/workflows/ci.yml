@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          # The port .env.example names, so CI uses the same addresses as a local setup.
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Environment
+        run: cp .env.example .env
+
+      - name: Typecheck
+        run: pnpm build
+
+      - name: Migrations match the schema
+        run: |
+          pnpm --filter @mission-control/api db:generate
+          git diff --exit-code -- packages/api/src/db/migrations
+          test -z "$(git status --porcelain -- packages/api/src/db/migrations)"
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Create roles and databases, migrate and seed
+        run: |
+          pnpm --filter @mission-control/api db:bootstrap
+          pnpm --filter @mission-control/api db:migrate
+          pnpm --filter @mission-control/api db:seed
+
+      - name: Integration tests
+        run: pnpm test:int
