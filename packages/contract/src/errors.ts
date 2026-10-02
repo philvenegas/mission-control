@@ -12,12 +12,12 @@ export const ERROR_CODES = {
 
 export type ErrorCode = keyof typeof ERROR_CODES;
 
-const errorCodes = Object.keys(ERROR_CODES) as [ErrorCode, ...ErrorCode[]];
+const isErrorCode = (value: string): value is ErrorCode => Object.hasOwn(ERROR_CODES, value);
 
 /** The one shape every error response has. `hint` is written for a person. */
 export const errorResponseSchema = z.object({
   error: z.object({
-    code: z.enum(errorCodes),
+    code: z.string().refine(isErrorCode),
     message: z.string(),
     hint: z.string().optional(),
   }),

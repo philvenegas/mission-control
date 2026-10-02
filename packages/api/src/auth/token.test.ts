@@ -8,23 +8,23 @@ const HOUR = 60 * 60;
 
 describe('a token', () => {
   it('carries the user, organisation and role it was signed with', async () => {
-    const { token } = await signToken(claims, SECRET, 12 * HOUR);
+    const { token } = await signToken(claims, { secret: SECRET, ttlSeconds: 12 * HOUR });
     expect(await verifyToken(token, SECRET)).toEqual(claims);
   });
 
   it('expires after its lifetime', async () => {
     const now = new Date('2026-10-02T09:00:00Z');
-    const { expiresAt } = await signToken(claims, SECRET, 12 * HOUR, now);
+    const { expiresAt } = await signToken(claims, { secret: SECRET, ttlSeconds: 12 * HOUR }, now);
     expect(expiresAt.toISOString()).toBe('2026-10-02T21:00:00.000Z');
 
     const thirteenHoursAgo = new Date(Date.now() - 13 * HOUR * 1000);
-    const { token } = await signToken(claims, SECRET, 12 * HOUR, thirteenHoursAgo);
+    const { token } = await signToken(claims, { secret: SECRET, ttlSeconds: 12 * HOUR }, thirteenHoursAgo);
     await expect(verifyToken(token, SECRET)).rejects.toMatchObject({ code: 'UNAUTHENTICATED', message: 'Your login has expired.' });
   });
 
   it('is refused when signed with another secret, altered, or not a token at all', async () => {
-    const { token } = await signToken(claims, 'another-secret', HOUR);
-    const [header, payload, signature] = (await signToken(claims, SECRET, HOUR)).token.split('.');
+    const { token } = await signToken(claims, { secret: 'another-secret', ttlSeconds: HOUR });
+    const [header, payload, signature] = (await signToken(claims, { secret: SECRET, ttlSeconds: HOUR })).token.split('.');
     const forgedPayload = Buffer.from(JSON.stringify({ sub: 'user-1', org: 'org-2', role: 'director' })).toString('base64url');
     for (const bad of [token, `${header}.${forgedPayload}.${signature}`, `${header}.${payload}.`, 'not-a-token', '']) {
       await expect(verifyToken(bad, SECRET)).rejects.toMatchObject({ code: 'UNAUTHENTICATED', message: 'Your login is not valid.' });

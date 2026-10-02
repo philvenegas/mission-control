@@ -8,13 +8,12 @@ describe('the API settings', () => {
     expect(loadConfig(env)).toEqual({
       port: 3000,
       databaseUrl: env.DATABASE_URL,
-      tokenSecret: env.TOKEN_SECRET,
-      tokenTtlSeconds: 12 * 60 * 60,
+      token: { secret: env.TOKEN_SECRET, ttlSeconds: 12 * 60 * 60 },
     });
   });
 
   it('take the port and token lifetime from the environment', () => {
-    expect(loadConfig({ ...env, PORT: '8080', TOKEN_TTL: '7d' })).toMatchObject({ port: 8080, tokenTtlSeconds: 7 * 24 * 60 * 60 });
+    expect(loadConfig({ ...env, PORT: '8080', TOKEN_TTL: '7d' })).toMatchObject({ port: 8080, token: { ttlSeconds: 7 * 24 * 60 * 60 } });
   });
 
   it.each([

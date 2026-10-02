@@ -1,22 +1,30 @@
-import type { LoginResponse } from '@mission-control/contract';
+import { loginResponseSchema } from '@mission-control/contract';
+import { afterAll, beforeAll } from 'vitest';
+import type { TokenSettings } from '../auth/token.ts';
+import { DEMO_PASSWORD, seed } from '../db/seed.ts';
 import { type App, createApp } from '../http/app.ts';
-import { DEMO_PASSWORD } from '../db/seed.ts';
-import { connectAsApi } from './database.ts';
+import type { Route } from '../http/route.ts';
+import { connectAsApi, connectAsOwner } from './database.ts';
 
-export const TEST_TOKEN_SECRET = 'a-secret-for-integration-tests';
-export const TEST_TOKEN_TTL_SECONDS = 60 * 60;
+export const TEST_TOKEN: TokenSettings = { secret: 'a-secret-for-integration-tests', ttlSeconds: 60 * 60 };
 
-/** The API under test: the real app, on the test database, as the API database role. */
-export function startTestApp() {
-  const { client, db } = connectAsApi();
+/**
+ * The API under test: the real app, on a freshly seeded test database, as the API database role.
+ * `owner` is for arranging data the API cannot; it never stands in for the API.
+ */
+export function useSeededApp(extraRoutes: Route[] = []) {
+  const owner = connectAsOwner();
+  const api = connectAsApi();
   const unexpectedErrors: unknown[] = [];
-  const app = createApp({
-    db,
-    tokenSecret: TEST_TOKEN_SECRET,
-    tokenTtlSeconds: TEST_TOKEN_TTL_SECONDS,
-    onUnexpectedError: (error) => unexpectedErrors.push(error),
+  const app = createApp({ db: api.db, token: TEST_TOKEN, extraRoutes, onUnexpectedError: (error) => unexpectedErrors.push(error) });
+
+  beforeAll(async () => {
+    await seed(owner.db);
   });
-  return { app, db, unexpectedErrors, close: () => client.end() };
+  afterAll(async () => {
+    await Promise.all([owner.client.end(), api.client.end()]);
+  });
+  return { app, owner: owner.client, api, unexpectedErrors };
 }
 
 export function postLogin(app: App, body: unknown) {
@@ -27,22 +35,16 @@ export function postLogin(app: App, body: unknown) {
   });
 }
 
-/** Logs a seeded user in and returns a caller that sends their token. */
-export async function loginAs(app: App, org: string, email: string) {
-  const response = await postLogin(app, { org, email, password: DEMO_PASSWORD });
-  if (response.status !== 200) throw new Error(`Could not log ${email} in to ${org}: ${response.status}`);
-  const { token } = (await response.json()) as LoginResponse;
-  return caller(app, token);
+/** Logs a user in and returns a caller that sends their token. */
+export async function loginAs(app: App, org: string, email: string, password = DEMO_PASSWORD) {
+  const response = await postLogin(app, { org, email, password });
+  const { token } = loginResponseSchema.parse(await response.json());
+  return callerWith(app, token);
 }
 
-export function caller(app: App, token: string) {
-  const request = (method: string) => (path: string, body?: unknown) =>
-    app.request(path, {
-      method,
-      headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  return { token, get: request('GET'), post: request('POST') };
+export function callerWith(app: App, token: string) {
+  const request = (method: string) => (path: string) => app.request(path, { method, headers: { Authorization: `Bearer ${token}` } });
+  return { get: request('GET'), post: request('POST') };
 }
 
-export type Caller = ReturnType<typeof caller>;
+export type Caller = ReturnType<typeof callerWith>;

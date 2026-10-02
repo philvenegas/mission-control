@@ -30,7 +30,7 @@ export const invalidLogin = () =>
 export const unauthenticated = (message = 'You are not logged in.') =>
   new DomainError('UNAUTHENTICATED', message, 'Log in with `mctl login`.');
 
-export const forbidden = (message: string, hint?: string) => new DomainError('FORBIDDEN', message, hint);
+export const forbidden = (message: string) => new DomainError('FORBIDDEN', message);
 
 /** For a record that does not exist and, identically, for one the caller may not see. */
 export const notFound = (what: string) => new DomainError('NOT_FOUND', `${what} was not found.`);

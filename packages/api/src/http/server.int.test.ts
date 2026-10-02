@@ -1,13 +1,9 @@
 import { expect, it } from 'vitest';
 import { requireEnv } from '../env.ts';
+import { TEST_TOKEN } from '../test/app.ts';
 import { startServer } from './server.ts';
 
-const config = (port: number) => ({
-  port,
-  databaseUrl: requireEnv('TEST_DATABASE_URL'),
-  tokenSecret: 'a-secret-for-integration-tests',
-  tokenTtlSeconds: 3600,
-});
+const config = (port: number) => ({ port, databaseUrl: requireEnv('TEST_DATABASE_URL'), token: TEST_TOKEN });
 
 it('serves the API over HTTP, and says so plainly when its port is taken', async () => {
   const server = await startServer(config(0));

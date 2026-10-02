@@ -1,5 +1,8 @@
+import { z } from 'zod';
+
 export const ROLES = ['director', 'mission_lead', 'crew_member'] as const;
 export type Role = (typeof ROLES)[number];
+export const isRole = (value: unknown): value is Role => ROLES.some((role) => role === value);
 
 export const CREW_STATUSES = ['active', 'inactive'] as const;
 export type CrewStatus = (typeof CREW_STATUSES)[number];
@@ -27,19 +30,17 @@ export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 export const MIN_LEVEL = 1;
 export const MAX_LEVEL = 5;
 
-export interface MatchWeights {
-  proficiency: number;
-  workload: number;
-  rest: number;
-}
+export const matchWeightsSchema = z.object({ proficiency: z.number(), workload: z.number(), rest: z.number() });
+export type MatchWeights = z.infer<typeof matchWeightsSchema>;
 
-export interface OrgSettings {
-  approvals_required: number;
-  allow_unfilled_submission: boolean;
+export const orgSettingsSchema = z.object({
+  approvals_required: z.number().int().min(1),
+  allow_unfilled_submission: z.boolean(),
   /** Designed, not built. */
-  min_rest_days: number;
-  match_weights: MatchWeights;
-}
+  min_rest_days: z.number().int().min(0),
+  match_weights: matchWeightsSchema,
+});
+export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 
 export const DEFAULT_MATCH_WEIGHTS: MatchWeights = { proficiency: 0.45, workload: 0.35, rest: 0.2 };
 

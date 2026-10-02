@@ -3,15 +3,10 @@ import type { Config } from '../config.ts';
 import { connect } from '../db/connection.ts';
 import { createApp } from './app.ts';
 
-export interface RunningServer {
-  port: number;
-  close(): Promise<void>;
-}
-
 /** Starts the API. Resolves once it is listening; rejects, in words, if the port is taken. */
-export function startServer(config: Config): Promise<RunningServer> {
+export function startServer(config: Config): Promise<{ port: number; close(): Promise<void> }> {
   const { client, db } = connect(config.databaseUrl);
-  const app = createApp({ db, tokenSecret: config.tokenSecret, tokenTtlSeconds: config.tokenTtlSeconds });
+  const app = createApp({ db, token: config.token });
   return new Promise((resolve, reject) => {
     const server = serve({ fetch: app.fetch, port: config.port }, ({ port }) => {
       const close = () =>
