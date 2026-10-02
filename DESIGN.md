@@ -219,9 +219,15 @@ Each candidate and slot pair gets a score from 0 to 1, a weighted sum of compone
 
 | Component | Default weight | Definition |
 |---|---|---|
-| Proficiency | 0.45 | `level / 5` |
+| Proficiency | 0.45 | `0.6 + 0.1 × (level − minimum level)`: meeting the bar earns 60%, each level above it adds 10 points |
 | Workload balance | 0.35 | `1 − (days assigned in the 90 days either side of the mission start ÷ 180)` |
-| Rest | 0.20 | Days since the end of their previous mission, capped at 30, divided by 30 |
+| Rest | 0.20 | Days since the end of their previous mission, capped at 30, divided by 30. A crew member who has never flown counts as fully rested |
+
+These definitions and weights were tried against seven scenarios in a throwaway prototype (branch `prototype/scoring-model`) and accepted with their consequences understood:
+
+- Fairness can outrank skill. An expert who has been away 80 of the surrounding 180 days and landed three days ago scores 57; a rested crew member who just meets the bar scores 82 and is chosen.
+- An expert still wins a routine slot when all else is equal, but a moderate workload difference sends the person who just meets the bar. Proficiency as plain `level / 5` was rejected for spending the scarcest people on routine work; "closest to the minimum" was rejected for never preferring the stronger candidate.
+- A new hire with no history outranks a slightly stronger veteran with a normal schedule.
 
 Weights are per-organisation settings. Each component is a small pure function with the same signature, held in a list. Adding a component, or a hard constraint such as a resource limit, means adding one function to a list.
 
