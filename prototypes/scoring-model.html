@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE — Scoring model</title>
+<style>
+  :root { --ink:#1c2330; --muted:#667085; --line:#e3e6ec; --bg:#f7f8fa; --card:#fff; --accent:#3b5bdb; --warn:#b54708; --bad:#b42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:1080px; margin:0 auto; padding:28px 16px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 10px; } h3 { font-size:14px; margin:14px 0 6px; }
+  .tag { display:inline-block; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--warn); border:1px solid var(--warn); border-radius:4px; padding:1px 6px; margin-bottom:8px; }
+  .intro { color:var(--muted); max-width:760px; margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px; margin-bottom:16px; }
+  .tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:6px; padding:6px 10px; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .steps button { margin:0 6px 6px 0; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); font-weight:600; }
+  .scroll { overflow-x:auto; }
+  input[type=number] { width:58px; font:inherit; padding:2px 4px; border:1px solid var(--line); border-radius:4px; }
+  input[type=range] { width:180px; vertical-align:middle; }
+  .controls label { display:inline-block; min-width:150px; }
+  .controls div { margin-bottom:6px; }
+  .num { font-variant-numeric:tabular-nums; }
+  .bar { display:inline-flex; height:10px; width:150px; background:#eef0f4; border-radius:5px; overflow:hidden; vertical-align:middle; }
+  .bar i { display:block; height:100%; }
+  .p { background:#3b5bdb; } .w { background:#74a0f5; } .r { background:#c3d3fb; }
+  .muted { color:var(--muted); } .warn { color:var(--warn); } .bad { color:var(--bad); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 12px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; } @media (max-width:800px){ .grid { grid-template-columns:1fr; } }
+  ul { margin:4px 0; padding-left:18px; }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">Prototype — throwaway</span>
+  <h1>Scoring model: does the matcher pick the crew you would?</h1>
+  <p class="intro">The question: are <b>proficiency</b>, <b>workload balance</b> and <b>rest</b> the right things to score a crew member on, with the right definitions and weights? Pick a scenario, read the proposed crew, then change the weights or the crew's numbers and watch the proposal change. Say where it picks someone you wouldn't.</p>
+
+  <div class="card">
+    <h2>Scenarios</h2>
+    <div class="tabs" id="tabs"></div>
+    <p id="scenarioText"></p>
+    <div class="steps" id="steps"></div>
+  </div>
+
+  <div class="grid">
+    <div class="card controls">
+      <h2>How a crew member is scored</h2>
+      <div><label>Proficiency weight</label><input type="range" min="0" max="100" id="wP"> <span class="num" id="wPv"></span></div>
+      <div><label>Workload balance weight</label><input type="range" min="0" max="100" id="wW"> <span class="num" id="wWv"></span></div>
+      <div><label>Rest weight</label><input type="range" min="0" max="100" id="wR"> <span class="num" id="wRv"></span></div>
+      <div style="margin-top:10px"><label>Proficiency means</label>
+        <button id="modeHigher">Higher level is better</button>
+        <button id="modeClosest">Closest to the minimum is better</button>
+        <button id="modeBar">Meets the bar, plus a bonus per level above</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">Weights are shown as shares of 100%. Workload balance = 1 − (days assigned in the 90 days either side of the mission start ÷ 180). "Meets the bar" gives 60% for the minimum level and 10 more for each level above it. Rest = days since their last mission ended, capped at 30, ÷ 30; someone who has never flown counts as fully rested.</p>
+    </div>
+    <div class="card">
+      <h2>The mission needs</h2>
+      <div id="slots"></div>
+      <h3>Order of priorities</h3>
+      <ol style="margin:0;padding-left:18px"><li>Fill as many slots as possible.</li><li>Avoid crew another draft mission has proposed (a clash).</li><li>Highest total score.</li></ol>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Proposed crew</h2>
+    <div class="legend muted" style="margin-bottom:8px">Score bar:<i class="p"></i>proficiency<i class="w"></i>workload balance<i class="r"></i>rest</div>
+    <div class="scroll" id="result"></div>
+    <div id="unfilled"></div>
+    <p id="greedy" class="muted"></p>
+  </div>
+
+  <div class="card">
+    <h2>Crew <span class="muted" style="font-weight:400">— edit any number and the proposal updates</span></h2>
+    <div class="scroll" id="crew"></div>
+  </div>
+</main>
+
+<script>
+/* ============================================================
+   PURE MODULE — no DOM. This is the part that would lift into
+   packages/matcher. Everything below the next banner is page.
+   ============================================================ */
+const Matcher = (() => {
+  const SCALE = 1_000_000;
+
+  // Hard constraints: returns null if the crew member is a candidate, else the reason.
+  function exclusion(crew, slot) {
+    if (crew.inactive) return { code: 'inactive', text: 'inactive' };
+    const s = crew.skills[slot.skill];
+    if (!s) return { code: 'no_skill', text: `does not have ${slot.skill}` };
+    if (s.level < slot.minLevel) return { code: 'below_level', text: `${slot.skill} level ${s.level}, needs ${slot.minLevel}`, gap: slot.minLevel - s.level };
+    if (s.certExpired) return { code: 'cert_expired', text: `${slot.skill} certification expires before the mission ends` };
+    if (crew.blocked) return { code: crew.blocked.code, text: crew.blocked.text };
+    return null;
+  }
+
+  // Scorers: each returns 0..1.
+  const scorers = {
+    proficiency(crew, slot, opts) {
+      const level = crew.skills[slot.skill].level;
+      if (opts.proficiencyMode === 'closest') return 1 - (level - slot.minLevel) / 4;
+      if (opts.proficiencyMode === 'bar') return 0.6 + 0.1 * (level - slot.minLevel); // meets the bar: 60%, +10 per level above
+      return level / 5;
+    },
+    workload(crew) { return 1 - Math.min(crew.daysAssigned, 180) / 180; },
+    rest(crew) { return crew.restDays == null ? 1 : Math.min(crew.restDays, 30) / 30; },
+  };
+
+  function score(crew, slot, opts) {
+    const total = opts.weights.proficiency + opts.weights.workload + opts.weights.rest || 1;
+    const parts = {};
+    let sum = 0;
+    for (const k of Object.keys(scorers)) {
+      const raw = scorers[k](crew, slot, opts);
+      const weighted = raw * opts.weights[k] / total;
+      parts[k] = { raw, weighted };
+      sum += weighted;
+    }
+    return { total: sum, parts };
+  }
+
+  // Hungarian algorithm, shortest-augmenting-path form. cost is n rows x m cols, n <= m, finite integers.
+  function solve(cost) {
+    const n = cost.length, m = cost[0].length;
+    const u = new Array(n + 1).fill(0), v = new Array(m + 1).fill(0);
+    const p = new Array(m + 1).fill(0), way = new Array(m + 1).fill(0);
+    for (let i = 1; i <= n; i++) {
+      p[0] = i; let j0 = 0;
+      const minv = new Array(m + 1).fill(Infinity), used = new Array(m + 1).fill(false);
+      do {
+        used[j0] = true;
+        const i0 = p[j0]; let delta = Infinity, j1 = 0;
+        for (let j = 1; j <= m; j++) if (!used[j]) {
+          const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
+          if (cur < minv[j]) { minv[j] = cur; way[j] = j0; }
+          if (minv[j] < delta) { delta = minv[j]; j1 = j; }
+        }
+        for (let j = 0; j <= m; j++) {
+          if (used[j]) { u[p[j]] += delta; v[j] -= delta; } else minv[j] -= delta;
+        }
+        j0 = j1;
+      } while (p[j0] !== 0);
+      do { const j1 = way[j0]; p[j0] = p[j1]; j0 = j1; } while (j0);
+    }
+    const rowToCol = new Array(n).fill(-1);
+    for (let j = 1; j <= m; j++) if (p[j]) rowToCol[p[j] - 1] = j - 1;
+    return rowToCol;
+  }
+
+  function expandSlots(requirements) {
+    const slots = [];
+    for (const r of requirements) for (let i = 1; i <= r.headcount; i++)
+      slots.push({ skill: r.skill, minLevel: r.minLevel, label: r.headcount > 1 ? `${r.skill} ${i} of ${r.headcount}` : r.skill });
+    return slots;
+  }
+
+  function match(input, opts) {
+    const slots = expandSlots(input.requirements);
+    const crew = [...input.crew].sort((a, b) => a.ref.localeCompare(b.ref, undefined, { numeric: true }));
+    const S = slots.length, C = crew.length;
+    const CLASH = S * SCALE + 1;
+    const UNFILLED = S * (CLASH + SCALE) + 1;
+    const FORBIDDEN = 2 * UNFILLED;
+
+    const cells = slots.map(slot => crew.map(c => {
+      const why = exclusion(c, slot);
+      return why ? { why } : { score: score(c, slot, opts) };
+    }));
+    const cost = slots.map((_, i) => {
+      const row = crew.map((c, j) => {
+        const cell = cells[i][j];
+        if (cell.why) return FORBIDDEN;
+        return Math.round((1 - cell.score.total) * SCALE) + (c.clash ? CLASH : 0);
+      });
+      for (let k = 0; k < S; k++) row.push(k === i ? UNFILLED : FORBIDDEN);
+      return row;
+    });
+    const answer = S ? solve(cost) : [];
+
+    const taken = new Set(answer.filter(j => j < C));
+    const result = slots.map((slot, i) => {
+      const j = answer[i];
+      const ranked = crew.map((c, k) => ({ c, cell: cells[i][k], k }))
+        .filter(x => !x.cell.why)
+        .sort((a, b) => b.cell.score.total - a.cell.score.total || a.k - b.k);
+      const out = { slot };
+      if (j < C && !cells[i][j].why) {
+        out.chosen = { crew: crew[j], score: cells[i][j].score, clash: !!crew[j].clash };
+        out.alternates = ranked.filter(x => x.k !== j).slice(0, 3)
+          .map(x => ({ crew: x.c, score: x.cell.score, clash: !!x.c.clash, usedElsewhere: taken.has(x.k) }));
+      } else {
+        const reasons = {};
+        let nearest = null;
+        crew.forEach((c, k) => {
+          const why = cells[i][k].why;
+          if (!why) { reasons['needed for another slot'] = (reasons['needed for another slot'] || 0) + 1; return; }
+          const label = { no_skill: `do not have ${slot.skill}`, below_level: 'below the level needed', cert_expired: 'certification expires too soon', inactive: 'inactive' }[why.code] || why.text;
+          reasons[label] = (reasons[label] || 0) + 1;
+          if (why.code !== 'no_skill' && why.code !== 'inactive') {
+            const rank = why.code === 'below_level' ? why.gap : 0.5;
+            if (!nearest || rank < nearest.rank) nearest = { rank, crew: c, text: why.text };
+          }
+        });
+        out.unfilled = { reasons, nearest };
+      }
+      return out;
+    });
+    // Slots of the same requirement are interchangeable: show filled ones first, best score first.
+    const groups = new Map();
+    result.forEach((r, i) => { const k = r.slot.skill + '|' + r.slot.minLevel; (groups.get(k) || groups.set(k, []).get(k)).push(i); });
+    for (const idx of groups.values()) {
+      const outcomes = idx.map(i => result[i]).sort((a, b) => (b.chosen ? b.chosen.score.total : -1) - (a.chosen ? a.chosen.score.total : -1));
+      const labels = idx.map(i => result[i].slot);
+      idx.forEach((i, n) => { result[i] = { ...outcomes[n], slot: labels[n] }; });
+    }
+    return { slots: result, filled: result.filter(r => r.chosen).length, total: S };
+  }
+
+  // For comparison only: best-scoring free candidate, slot by slot, in order.
+  function greedy(input, opts) {
+    const slots = expandSlots(input.requirements), used = new Set();
+    return slots.map(slot => {
+      let best = null;
+      for (const c of input.crew) {
+        if (used.has(c.ref) || exclusion(c, slot)) continue;
+        const s = score(c, slot, opts).total;
+        if (!best || s > best.s) best = { c, s };
+      }
+      if (best) used.add(best.c.ref);
+      return { slot, crew: best ? best.c : null };
+    });
+  }
+
+  return { match, greedy, score, exclusion };
+})();
+
+/* ============================================================
+   PAGE — throwaway shell over the module above.
+   ============================================================ */
+const DEFAULTS = { weights: { proficiency: 45, workload: 35, rest: 20 }, proficiencyMode: 'higher' };
+const sk = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'number' ? { level: v } : v]));
+const person = (ref, name, skills, daysAssigned, restDays, extra = {}) => ({ ref, name, skills: sk(skills), daysAssigned, restDays, ...extra });
+const leave = { code: 'availability', text: 'has an availability block in the period' };
+
+const SCENARIOS = [
+  { name: 'Two skills, one expert',
+    text: 'Ada is the best pilot and the only medic. A matcher that fills one slot at a time takes her as pilot and leaves medic empty. Watch that both slots are filled, and see the note underneath on what a slot-by-slot matcher would have done.',
+    requirements: [{ skill: 'pilot', minLevel: 3, headcount: 1 }, { skill: 'medic', minLevel: 3, headcount: 1 }],
+    crew: () => [person('CRW-1', 'Ada Reyes', { pilot: 5, medic: 4 }, 20, 25), person('CRW-2', 'Ben Osei', { pilot: 4 }, 20, 25), person('CRW-3', 'Cy Lindqvist', { engineer: 4 }, 0, 30)],
+    steps: [] },
+  { name: 'Expert or rested?',
+    text: 'One geologist needed. Dara is the expert but has been away 80 of the surrounding 180 days and landed 3 days ago. Eli only just meets the bar but has done nothing for two months. Who should go? With the default weights the matcher picks the least skilled person.',
+    requirements: [{ skill: 'geologist', minLevel: 3, headcount: 1 }],
+    crew: () => [person('CRW-1', 'Dara Whitlock', { geologist: 5 }, 80, 3), person('CRW-2', 'Eli Navarro', { geologist: 3 }, 0, 60), person('CRW-3', 'Fay Okonkwo', { geologist: 4 }, 40, 14)],
+    steps: [
+      { label: 'Favour proficiency (70 / 20 / 10)', run: s => { s.opts.weights = { proficiency: 70, workload: 20, rest: 10 }; } },
+      { label: 'Favour fairness (20 / 50 / 30)', run: s => { s.opts.weights = { proficiency: 20, workload: 50, rest: 30 }; } },
+      { label: 'Back to defaults (45 / 35 / 20)', run: s => { s.opts.weights = { ...DEFAULTS.weights }; } },
+    ] },
+  { name: 'Overqualified',
+    text: 'A routine slot needs comms at level 2. Gus is the organisation\'s only level-5 comms officer; Hana is level 2. Their workload and rest are identical. "Higher is better" sends Gus on a job Hana could do. Switch the meaning of proficiency and see whether that is what you want.',
+    requirements: [{ skill: 'comms', minLevel: 2, headcount: 1 }],
+    crew: () => [person('CRW-1', 'Gus Havel', { comms: 5 }, 30, 20), person('CRW-2', 'Hana Sato', { comms: 2 }, 30, 20), person('CRW-3', 'Idris Bello', { comms: 3 }, 60, 10)],
+    steps: [
+      { label: 'Proficiency: closest to the minimum', run: s => { s.opts.proficiencyMode = 'closest'; } },
+      { label: 'Proficiency: meets the bar, plus a bonus', run: s => { s.opts.proficiencyMode = 'bar'; } },
+      { label: 'Then give Gus 80 days of recent work', run: s => { s.opts.proficiencyMode = 'bar'; s.crew[0].daysAssigned = 110; } },
+      { label: 'Proficiency: higher is better', run: s => { s.opts.proficiencyMode = 'higher'; } },
+    ] },
+  { name: 'New hire',
+    text: 'Ivo joined last week and has never flown, so he counts as fully rested with no workload. Jun is the stronger navigator with a normal recent schedule. The new hire wins narrowly. Is "never flown" really the same as "fully rested"?',
+    requirements: [{ skill: 'navigator', minLevel: 3, headcount: 1 }],
+    crew: () => [person('CRW-1', 'Ivo Marek', { navigator: 4 }, 0, null), person('CRW-2', 'Jun Park', { navigator: 5 }, 30, 20)],
+    steps: [] },
+  { name: 'A full crew',
+    text: 'Two engineers and a medic, with a realistic mix: one certification about to lapse, one person on leave, several people who could fill either role. Check the alternates as well as the choices.',
+    requirements: [{ skill: 'engineer', minLevel: 3, headcount: 2 }, { skill: 'medic', minLevel: 2, headcount: 1 }],
+    crew: () => [
+      person('CRW-1', 'Kira Novak', { engineer: 5, medic: 3 }, 50, 10),
+      person('CRW-2', 'Leo Adeyemi', { engineer: 4 }, 10, 40),
+      person('CRW-3', 'Mina Farouk', { engineer: 3, medic: 4 }, 25, 22),
+      person('CRW-4', 'Noor Haddad', { engineer: { level: 5, certExpired: true } }, 0, 60),
+      person('CRW-5', 'Omar Vance', { medic: 5 }, 0, 45, { blocked: leave }),
+      person('CRW-6', 'Pia Lund', { engineer: 3 }, 90, 5),
+      person('CRW-7', 'Quin Abara', { medic: 2 }, 15, 30),
+    ],
+    steps: [] },
+  { name: 'Cannot be staffed',
+    text: 'Two medics at level 4 are needed and only one person qualifies. The second slot is left unfilled. Check that the explanation tells a mission lead what to do next.',
+    requirements: [{ skill: 'medic', minLevel: 4, headcount: 2 }],
+    crew: () => [
+      person('CRW-1', 'Rosa Imani', { medic: 4 }, 20, 20),
+      person('CRW-2', 'Sven Dahl', { medic: 3 }, 10, 30),
+      person('CRW-3', 'Tala Moreno', { medic: 5 }, 0, 60, { blocked: leave }),
+      person('CRW-4', 'Uma Raj', { pilot: 4 }, 0, 30),
+      person('CRW-5', 'Vik Sorensen', { engineer: 3 }, 0, 30),
+    ],
+    steps: [] },
+  { name: 'Clash as a last resort',
+    text: 'Ada is the better pilot but another draft mission has already proposed her. The matcher takes Ben to avoid a clash. Then put Ben on leave: Ada is now the only way to fill the slot, so she is chosen and flagged.',
+    requirements: [{ skill: 'pilot', minLevel: 3, headcount: 1 }],
+    crew: () => [person('CRW-1', 'Ada Reyes', { pilot: 5 }, 10, 30, { clash: true }), person('CRW-2', 'Ben Osei', { pilot: 3 }, 10, 30)],
+    steps: [
+      { label: 'Put Ben on leave', run: s => { s.crew[1].blocked = leave; } },
+      { label: 'Ben returns', run: s => { delete s.crew[1].blocked; } },
+    ] },
+];
+
+const state = { scenario: 0, crew: [], opts: null };
+const $ = id => document.getElementById(id);
+const pct = x => (x * 100).toFixed(0);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function load(i) {
+  state.scenario = i;
+  state.crew = SCENARIOS[i].crew();
+  state.opts = { weights: { ...DEFAULTS.weights }, proficiencyMode: DEFAULTS.proficiencyMode };
+  render();
+}
+
+function bar(score) {
+  const p = score.parts;
+  return `<span class="bar"><i class="p" style="width:${p.proficiency.weighted * 100}%"></i><i class="w" style="width:${p.workload.weighted * 100}%"></i><i class="r" style="width:${p.rest.weighted * 100}%"></i></span>`;
+}
+function breakdown(score) {
+  const p = score.parts;
+  return `<span class="muted num">proficiency ${pct(p.proficiency.weighted)} · workload ${pct(p.workload.weighted)} · rest ${pct(p.rest.weighted)}</span>`;
+}
+
+function render() {
+  const sc = SCENARIOS[state.scenario], o = state.opts;
+  $('tabs').innerHTML = SCENARIOS.map((s, i) => `<button class="${i === state.scenario ? 'on' : ''}" data-tab="${i}">${i + 1}. ${esc(s.name)}</button>`).join('');
+  $('scenarioText').textContent = sc.text;
+  $('steps').innerHTML = (sc.steps.length ? '<span class="muted">Try: </span>' : '') +
+    sc.steps.map((s, i) => `<button data-step="${i}">${esc(s.label)}</button>`).join('') +
+    `<button data-reset="1">Reset this scenario</button>`;
+
+  const total = o.weights.proficiency + o.weights.workload + o.weights.rest || 1;
+  for (const [id, k] of [['wP', 'proficiency'], ['wW', 'workload'], ['wR', 'rest']]) {
+    $(id).value = o.weights[k];
+    $(id + 'v').textContent = pct(o.weights[k] / total) + '%';
+  }
+  $('modeHigher').className = o.proficiencyMode === 'higher' ? 'on' : '';
+  $('modeClosest').className = o.proficiencyMode === 'closest' ? 'on' : '';
+  $('modeBar').className = o.proficiencyMode === 'bar' ? 'on' : '';
+
+  $('slots').innerHTML = '<ul>' + sc.requirements.map(r => `<li>${r.headcount} × <b>${esc(r.skill)}</b>, level ${r.minLevel} or above</li>`).join('') + '</ul>';
+
+  const input = { requirements: sc.requirements, crew: state.crew };
+  const res = Matcher.match(input, o);
+  $('result').innerHTML = `<p><b>${res.filled} of ${res.total} slots filled.</b></p><table><tr><th>Slot</th><th>Crew member</th><th>Score</th><th></th><th>Alternates</th></tr>` +
+    res.slots.map(r => r.chosen
+      ? `<tr><td>${esc(r.slot.label)} ≥ ${r.slot.minLevel}</td>
+           <td><b>${esc(r.chosen.crew.name)}</b> <span class="muted">level ${r.chosen.crew.skills[r.slot.skill].level}</span>${r.chosen.clash ? '<br><span class="warn">clash: also proposed on another draft</span>' : ''}</td>
+           <td class="num"><b>${pct(r.chosen.score.total)}</b></td>
+           <td>${bar(r.chosen.score)}<br>${breakdown(r.chosen.score)}</td>
+           <td>${r.alternates.length ? r.alternates.map(a => `${esc(a.crew.name)} <span class="num">${pct(a.score.total)}</span>${a.clash ? ' <span class="warn">(clash)</span>' : ''}${a.usedElsewhere ? ' <span class="muted">(in another slot)</span>' : ''}`).join('<br>') : '<span class="muted">none</span>'}</td></tr>`
+      : `<tr><td>${esc(r.slot.label)} ≥ ${r.slot.minLevel}</td><td class="bad"><b>Unfilled</b></td><td></td><td colspan="2">
+           ${Object.entries(r.unfilled.reasons).map(([k, n]) => `${n} ${esc(k)}`).join(' · ')}
+           ${r.unfilled.nearest ? `<br>Nearest miss: <b>${esc(r.unfilled.nearest.crew.name)}</b> — ${esc(r.unfilled.nearest.text)}` : ''}</td></tr>`
+    ).join('') + '</table>';
+
+  const g = Matcher.greedy(input, o);
+  const gFilled = g.filter(x => x.crew).length;
+  $('greedy').innerHTML = gFilled >= res.filled ? 'A slot-by-slot matcher would have filled the same number of slots here.'
+    : `A slot-by-slot matcher would have filled only ${gFilled} of ${res.total}: ` + g.map(x => `${esc(x.slot.label)} → ${x.crew ? esc(x.crew.name) : '<span class="bad">nobody</span>'}`).join(', ') + '.';
+
+  const skills = [...new Set(sc.requirements.map(r => r.skill).concat(state.crew.flatMap(c => Object.keys(c.skills))))];
+  $('crew').innerHTML = `<table><tr><th>Crew member</th>${skills.map(s => `<th>${esc(s)} level</th>`).join('')}<th>Days assigned (of 180)</th><th>Days since last mission</th><th>Status</th></tr>` +
+    state.crew.map((c, i) => `<tr><td>${esc(c.name)}<br><span class="muted">${c.ref}</span></td>` +
+      skills.map(s => `<td>${c.skills[s] ? `<input type="number" min="1" max="5" value="${c.skills[s].level}" data-crew="${i}" data-skill="${esc(s)}">${c.skills[s].certExpired ? '<br><span class="warn">certification lapses</span>' : ''}` : '<span class="muted">—</span>'}</td>`).join('') +
+      `<td><input type="number" min="0" max="180" value="${c.daysAssigned}" data-crew="${i}" data-field="daysAssigned"></td>` +
+      `<td>${c.restDays == null ? '<span class="muted">never flown</span>' : `<input type="number" min="0" max="365" value="${c.restDays}" data-crew="${i}" data-field="restDays">`}</td>` +
+      `<td>${c.blocked ? `<span class="bad">${esc(c.blocked.text)}</span>` : c.clash ? '<span class="warn">proposed on another draft</span>' : '<span class="muted">available</span>'}</td></tr>`).join('') + '</table>';
+}
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.tab != null) load(+t.dataset.tab);
+  else if (t.dataset.step != null) { SCENARIOS[state.scenario].steps[+t.dataset.step].run(state); render(); }
+  else if (t.dataset.reset) load(state.scenario);
+  else if (t.id === 'modeHigher') { state.opts.proficiencyMode = 'higher'; render(); }
+  else if (t.id === 'modeClosest') { state.opts.proficiencyMode = 'closest'; render(); }
+  else if (t.id === 'modeBar') { state.opts.proficiencyMode = 'bar'; render(); }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.type !== 'range') return;
+  state.opts.weights[{ wP: 'proficiency', wW: 'workload', wR: 'rest' }[t.id]] = +t.value;
+  render();
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.dataset.crew == null) return;
+  const c = state.crew[+t.dataset.crew], v = +t.value;
+  if (t.dataset.skill) c.skills[t.dataset.skill].level = Math.max(1, Math.min(5, v || 1));
+  else c[t.dataset.field] = Math.max(0, v || 0);
+  render();
+});
+load(0);
+</script>
+</body>
+</html>
