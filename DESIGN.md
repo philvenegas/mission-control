@@ -49,6 +49,8 @@ Text elsewhere marks these items as *(stretch)* or *(designed, not built)*.
 | D11 | The matcher suggests; a human applies | Leads keep control and the run is an auditable record | Matcher writes assignments directly |
 | D12 | Double booking is prevented by a database exclusion constraint | Two leads racing for the same person must fail safely, whatever the code does | Check-then-insert in application code |
 | D13 | The CLI holds no business logic | The API is the product; the CLI is one client of it | Shared logic in the CLI |
+| D14 | The API exposes references only; internal ids never appear in a path, body or response | References are numbered per organisation, so another organisation's record cannot even be named | Global ids in the API |
+| D15 | Email is unique within an organisation; login names the organisation | A globally unique email reveals that a user exists in another organisation | Globally unique email |
 
 ## 3. Domain model
 
@@ -57,7 +59,7 @@ Every table carries its own `org_id` column, including the child tables below wh
 | Table | Key fields | Notes |
 |---|---|---|
 | `organisations` | `id`, `name`, `slug`, `settings` | `settings`: `approvals_required` (default 1), `min_rest_days` (default 0; designed, not built), `match_weights`. Seeded; read-only in the core |
-| `users` | `id`, `org_id`, `email` (globally unique), `password_hash`, `name`, `role` | `role`: `director`, `mission_lead`, `crew_member` |
+| `users` | `id`, `org_id`, `email`, `password_hash`, `name`, `role` | Unique on `(org_id, email)`. `role`: `director`, `mission_lead`, `crew_member` |
 | `crew_members` | `id`, `org_id`, `ref`, `user_id` (nullable, unique), `name`, `status` | `status`: `active`, `inactive` |
 | `skills` | `id`, `org_id`, `name`, `category` | Unique on `(org_id, name)` |
 | `crew_skills` | `crew_member_id`, `skill_id`, `level` 1–5, `certified_until` (nullable) | Levels: 1 novice, 3 competent, 5 expert |
@@ -68,6 +70,8 @@ Every table carries its own `org_id` column, including the child tables below wh
 | `mission_approvals` | `id`, `mission_id`, `approver_id`, `decision`, `note`, `created_at` | One row per decision |
 | `mission_events` | `id`, `mission_id`, `actor_id`, `type`, `from_status`, `to_status`, `note`, `created_at` | Append-only audit log |
 | `match_runs` | `id`, `mission_id`, `created_by`, `result` (jsonb), `created_at` | The saved proposal and its explanation |
+
+References. Five kinds of record have a reference, numbered per organisation and per kind, with a `ref` column unique on `(org_id, ref)`: mission `MSN`, crew member `CRW`, assignment `ASG`, match run `RUN`, availability block `AVL`. The next number for each kind is kept on the organisation row and taken inside the creating transaction. A skill is addressed by its name, a user by email, the organisation by its `slug` (globally unique). A requirement is addressed by its skill: `mission_requirements` is unique on `(mission_id, skill_id)`, so a mission has at most one requirement per skill. Two requirements for one skill at different levels is a later extension.
 
 Assignment statuses: `proposed`, `offered`, `accepted`, `declined`, `released`. The first three are "live" and hold the crew member's time.
 
@@ -128,7 +132,13 @@ Permissions are declared in one policy module and checked by one middleware. A r
 
 ### Authentication
 
-`POST /v1/auth/login` takes email and password and returns a signed token carrying user id, `org_id` and role. Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by email.
+`POST /v1/auth/login` takes the organisation's slug, an email and a password, and returns a signed token carrying user id, `org_id` and role. Login is the only cross-tenant lookup and goes through one narrow, privileged function that finds a user by slug and email. Every failure gives the same answer, "invalid organisation, email or password", so login does not reveal which organisations or emails exist.
+
+### Keeping a request inside its organisation
+
+- Every repository function takes a tenant context (the request's transaction and `org_id`) and filters by `org_id` explicitly. There is no other way to reach the database from module code.
+- Paths and bodies carry references, which resolve only within the caller's organisation (D14).
+- Errors are thrown as typed domain errors, never returned. One error handler turns them into responses. Any throw rolls the request's transaction back; as a backstop, so does any response with status 400 or above.
 
 The core is built ready for row-level security, so adding it later changes no existing code:
 
@@ -213,14 +223,14 @@ REST over JSON, prefix `/v1`. No organisation identifier appears in any path.
 | Organisation | `GET /org`; `PATCH /org/settings` *(designed, not built)* |
 | Skills | `GET /skills` (the taxonomy is seeded) |
 | Crew | `GET /crew`, `POST /crew`, `GET /crew/:ref`, `PATCH /crew/:ref`, `PUT /crew/:ref/skills/:skill`, `DELETE /crew/:ref/skills/:skill` |
-| Availability | `GET /crew/:ref/availability`, `POST /crew/:ref/availability`, `DELETE /availability/:id` |
+| Availability | `GET /crew/:ref/availability`, `POST /crew/:ref/availability`, `DELETE /availability/:ref` |
 | Missions | `GET /missions`, `POST /missions`, `GET /missions/:ref`, `PATCH /missions/:ref`, `GET /missions/:ref/events` |
-| Requirements | `POST /missions/:ref/requirements`, `DELETE /missions/:ref/requirements/:id` |
+| Requirements | `PUT /missions/:ref/requirements/:skill`, `DELETE /missions/:ref/requirements/:skill` |
 | Lifecycle | `POST /missions/:ref/{submit,approve,reject,launch,complete,cancel}`; `withdraw` *(designed, not built)* |
-| Matching | `POST /missions/:ref/match`, `GET /match-runs/:id`, `POST /match-runs/:id/apply` |
-| Assignments | `GET /assignments` (own, for crew), `POST /assignments/:id/{accept,decline}`, `DELETE /assignments/:id` |
+| Matching | `POST /missions/:ref/match`, `GET /match-runs/:ref`, `POST /match-runs/:ref/apply` |
+| Assignments | `GET /assignments` (own, for crew), `POST /assignments/:ref/{accept,decline}`, `DELETE /assignments/:ref` |
 
-`:ref` accepts the human reference (`MSN-12`, `CRW-7`); crew members may use `me`.
+`:ref` is the record's reference (`MSN-12`, `CRW-7`, `ASG-31`, `RUN-9`, `AVL-3`); crew members may use `me` for their own crew record. `:skill` is the skill's name. Internal ids appear nowhere in the API.
 
 Errors share one shape. `code` is stable and documented; `hint` is written for a person:
 
@@ -249,7 +259,8 @@ Principles:
 The walk-through a reviewer should be able to run from the README:
 
 ```
-mctl login --profile lead      # then --profile director, --profile crew
+mctl login --org artemis --email lead@artemis.example --profile lead
+                               # then --profile director, --profile crew
 mctl whoami
 
 mctl mission create --name "Europa Survey" --from 2027-03-01 --to 2027-03-20
@@ -269,7 +280,7 @@ mctl mission launch MSN-4
 mctl mission history MSN-4              # the audit trail
 ```
 
-Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|reject|cancel|complete`, `mctl org show`.
+Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl org show`.
 
 `mctl match run` is the centrepiece and its output gets the most design attention: one row per slot with crew, score and component bars; alternates indented beneath; unfilled slots in a separate block with the reason counts and nearest miss.
 
@@ -299,14 +310,16 @@ Rules for whoever writes the code, human or agent:
 3. Status changes happen only through `lifecycle.ts`.
 4. The matcher package imports nothing from the API.
 5. The CLI calls the API and formats output. Nothing else.
-6. Any new table gets `org_id`, a composite foreign key, a row-level security policy, and an isolation test.
+6. Any new table gets `org_id`, a composite foreign key and, once the stretch step is done, a row-level security policy. Any new route is added to the isolation sweep; the coverage test fails until it is.
+7. Errors are thrown, never returned.
+8. Requests and responses carry references, never internal ids.
 
 ## 10. Verification
 
 | What | How |
 |---|---|
 | Matcher correctness | Unit tests per constraint and scorer; the greedy-fails case; a property test comparing the solver with brute force on small random inputs; a determinism test |
-| Tenant isolation | Integration tests against real Postgres: a user from organisation B requests every organisation A resource by reference and by id and gets `404`; a direct query with B's tenant set returns no A rows |
+| Tenant isolation | Integration tests against real Postgres. (1) A sweep: a user from organisation B calls every route; lists contain no organisation A rows, and references that exist only in A give `404`. (2) A coverage test that fails when a registered route is missing from the sweep. (3) A direct database test that a row linking to another organisation's row is rejected by the composite foreign key. (4) A response with status 400 or above leaves no writes behind. With the stretch step: a direct query with B's tenant set returns no A rows, and the API's database role cannot bypass policies |
 | Lifecycle | A table-driven test over every (status, transition, role) combination; self-approval refused for leads and directors; two-approval policy |
 | Double booking | Two concurrent `apply` calls for the same crew member and overlapping periods: exactly one succeeds, the other gets `409` |
 | CLI | The section 8 walk-through as a scripted end-to-end test against a seeded database, asserting exit codes and `--json` output |

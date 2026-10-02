@@ -65,7 +65,7 @@ The user who submitted a mission for approval.
 _Avoid_: Requester
 
 **Requirement**:
-A skill, a minimum level and a headcount that a mission needs.
+A skill, a minimum level and a headcount that a mission needs. A mission has at most one requirement per skill.
 _Avoid_: Need, role, position
 
 **Slot**:
@@ -169,5 +169,5 @@ A mission lead keeping a crew member out of a match run.
 _Avoid_: Block, ban
 
 **Reference**:
-The short per-organisation name by which a record is addressed, such as MSN-12 or CRW-7.
+The short name by which a record is addressed, numbered within its organisation, such as MSN-12 or CRW-7. It is the only name a record has outside the system.
 _Avoid_: ID, key, code, slug

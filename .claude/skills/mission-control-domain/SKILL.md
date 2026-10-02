@@ -27,6 +27,8 @@ Each holds everywhere, and each has a test that fails when it is broken.
 8. **The matcher is pure.** Input in, result out, same input same result. It knows nothing of HTTP or the database.
 9. **The API decides.** The CLI sends requests and formats responses.
 10. **Every exclusion has a reason.** A crew member left out of a slot, or a slot left unfilled, can always be explained to the mission lead.
+11. **References only.** Requests and responses name records by reference, which resolves inside the caller's organisation. Internal ids stay inside the API.
+12. **Errors are thrown.** A failed request leaves no writes: every error is a thrown domain error, and any throw or any response of 400 or above rolls the request's transaction back.
 
 ## Where the mechanics live
 
