@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createAvailabilityBlockSchema, createCrewMemberSchema, setCrewSkillSchema, updateCrewMemberSchema } from './crew.ts';
+import {
+  createAvailabilityBlockSchema,
+  createCrewMemberSchema,
+  MAX_NAME_LENGTH,
+  MAX_REASON_LENGTH,
+  setCrewSkillSchema,
+  updateCrewMemberSchema,
+} from './crew.ts';
 
 const accepts = (schema: { safeParse(value: unknown): { success: boolean } }, value: unknown) => schema.safeParse(value).success;
 
@@ -8,6 +15,12 @@ describe('adding a crew member', () => {
     expect(createCrewMemberSchema.parse({ name: '  Zoe Park ' })).toEqual({ name: 'Zoe Park' });
     expect(accepts(createCrewMemberSchema, { name: ' ' })).toBe(false);
     expect(accepts(createCrewMemberSchema, { name: 'Zoe Park', ref: 'CRW-1' })).toBe(false);
+  });
+
+  it('takes a name up to its longest, and no longer', () => {
+    expect(accepts(createCrewMemberSchema, { name: 'x'.repeat(MAX_NAME_LENGTH) })).toBe(true);
+    expect(accepts(createCrewMemberSchema, { name: 'x'.repeat(MAX_NAME_LENGTH + 1) })).toBe(false);
+    expect(accepts(updateCrewMemberSchema, { name: 'x'.repeat(MAX_NAME_LENGTH + 1) })).toBe(false);
   });
 });
 
@@ -53,6 +66,7 @@ describe('adding an availability block', () => {
   it.each([
     ['a period that runs backwards', { from: '2027-03-05', to: '2027-03-01' }],
     ['a blank reason', { from: '2027-03-01', to: '2027-03-05', reason: ' ' }],
+    ['a reason longer than allowed', { from: '2027-03-01', to: '2027-03-05', reason: 'x'.repeat(MAX_REASON_LENGTH + 1) }],
     ['a field that is not part of a block', { from: '2027-03-01', to: '2027-03-05', crew_member: 'CRW-2' }],
   ])('refuses %s', (_, block) => {
     expect(accepts(createAvailabilityBlockSchema, block)).toBe(false);

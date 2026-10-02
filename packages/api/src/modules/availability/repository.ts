@@ -1,6 +1,7 @@
 import type { Period } from '@mission-control/contract';
 import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
 import { availabilityBlocks, crewMembers } from '../../db/schema.ts';
+import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 
 function selectBlocks({ tx, orgId }: TenantContext, condition: SQL) {
@@ -28,6 +29,11 @@ export function listAvailabilityBlocks(context: TenantContext, crewMemberId: str
 export async function findAvailabilityBlockByRef(context: TenantContext, ref: number): Promise<AvailabilityBlockRow | undefined> {
   const [block] = await selectBlocks(context, eq(availabilityBlocks.ref, ref));
   return block;
+}
+
+/** A block that must exist, such as one just created. */
+export async function getAvailabilityBlockByRef(context: TenantContext, ref: number): Promise<AvailabilityBlockRow> {
+  return exactlyOne(await selectBlocks(context, eq(availabilityBlocks.ref, ref)), 'availability block');
 }
 
 export async function insertAvailabilityBlock(

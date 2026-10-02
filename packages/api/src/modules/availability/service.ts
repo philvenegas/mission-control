@@ -1,14 +1,14 @@
 import { type AvailabilityBlock, type CreateAvailabilityBlock, formatRef } from '@mission-control/contract';
-import { scopeOf } from '../../auth/policy.ts';
-import { exactlyOne } from '../../db/rows.ts';
+import { reaches } from '../../auth/policy.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
-import { forbidden, notFound } from '../../errors.ts';
+import { notFound } from '../../errors.ts';
 import { resolveCrewMember } from '../crew/service.ts';
 import {
   type AvailabilityBlockRow,
   deleteAvailabilityBlock,
   findAvailabilityBlockByRef,
+  getAvailabilityBlockByRef,
   insertAvailabilityBlock,
   listAvailabilityBlocks,
 } from './repository.ts';
@@ -21,17 +21,17 @@ const toAvailabilityBlock = (row: AvailabilityBlockRow): AvailabilityBlock => ({
   reason: row.reason,
 });
 
-export async function listAvailability(context: TenantContext, crewMemberText: string): Promise<AvailabilityBlock[]> {
-  const crewMember = await resolveCrewMember(context, crewMemberText, 'crew:read');
+export async function listAvailability(context: TenantContext, crewMemberRef: string): Promise<AvailabilityBlock[]> {
+  const crewMember = await resolveCrewMember(context, crewMemberRef, 'crew:read');
   return (await listAvailabilityBlocks(context, crewMember.id)).map(toAvailabilityBlock);
 }
 
 export async function addAvailabilityBlock(
   context: TenantContext,
-  crewMemberText: string,
+  crewMemberRef: string,
   input: CreateAvailabilityBlock,
 ): Promise<AvailabilityBlock> {
-  const crewMember = await resolveCrewMember(context, crewMemberText, 'availability:manage');
+  const crewMember = await resolveCrewMember(context, crewMemberRef, 'availability:manage');
   const ref = await takeNextRef(context, 'availability_block');
   await insertAvailabilityBlock(context, {
     ref,
@@ -39,15 +39,12 @@ export async function addAvailabilityBlock(
     period: { from: input.from, to: input.to },
     reason: input.reason ?? null,
   });
-  const block = await findAvailabilityBlockByRef(context, ref);
-  return toAvailabilityBlock(exactlyOne(block ? [block] : [], 'availability block'));
+  return toAvailabilityBlock(await getAvailabilityBlockByRef(context, ref));
 }
 
 /** Removes a block. One on another crew member's record, for a caller who may manage only their own, is not found. */
-export async function removeAvailabilityBlock(context: TenantContext, text: string): Promise<void> {
-  const scope = scopeOf(context.role, 'availability:manage');
-  if (!scope) throw forbidden('Your role does not allow this.');
-  const block = await findAvailabilityBlockByRef(context, refNumber('availability_block', text));
-  if (!block || (scope === 'own' && block.crewMemberUserId !== context.userId)) throw notFound(text);
+export async function removeAvailabilityBlock(context: TenantContext, blockRef: string): Promise<void> {
+  const block = await findAvailabilityBlockByRef(context, refNumber('availability_block', blockRef));
+  if (!block || !reaches(context, 'availability:manage', block.crewMemberUserId)) throw notFound(blockRef);
   await deleteAvailabilityBlock(context, block.id);
 }

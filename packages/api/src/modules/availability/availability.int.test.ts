@@ -1,6 +1,7 @@
-import { availabilityBlockSchema, errorResponseSchema } from '@mission-control/contract';
+import { availabilityBlockSchema, errorResponseSchema, formatRef } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { SEED_ORGS } from '../../db/seed-data.ts';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
 
 const { app } = useSeededApp();
@@ -22,6 +23,7 @@ const blocks = async (caller: Caller, crewMember: string) =>
 const block = async (response: Response) => bodyOf(response, availabilityBlockSchema);
 const error = async (response: Response) => ({ status: response.status, ...(await bodyOf(response, errorResponseSchema)).error });
 const leave = { from: '2027-08-02', to: '2027-08-16', reason: 'Leave' };
+const seededBlocks = (SEED_ORGS[0]?.crew ?? []).flatMap((member) => member.blocks ?? []).length;
 
 describe('reading availability', () => {
   it("lists a crew member's blocks, earliest first, to a director and a mission lead", async () => {
@@ -43,7 +45,7 @@ describe('adding a block', () => {
   it('lets a director add one for any crew member, numbered next', async () => {
     const response = await dana.post('/v1/crew/CRW-2/availability', leave);
     expect(response.status).toBe(201);
-    expect(await block(response)).toEqual({ ref: 'AVL-4', crew_member: 'CRW-2', ...leave });
+    expect(await block(response)).toEqual({ ref: formatRef('availability_block', seededBlocks + 1), crew_member: 'CRW-2', ...leave });
   });
 
   it('lets a crew member add one for themselves, with or without a reason, and not for anyone else', async () => {

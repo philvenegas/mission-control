@@ -8,10 +8,11 @@ interface SweepEntry {
   /** How a director calls the route on their own organisation's records. It must succeed. */
   call: (director: Caller, own: OwnRecords) => Promise<Response>;
   /**
-   * How a Helios Labs director calls it naming Artemis records that Helios Labs does not have.
-   * It must answer 404. Required for every route whose path names a record.
+   * How a Helios Labs director calls it naming Artemis records that Helios Labs does not have,
+   * one call per record the path names. Each must answer 404. Required for every route whose path
+   * names a record.
    */
-  intoArtemis?: (heliosDirector: Caller) => Promise<Response>;
+  intoArtemis?: ((heliosDirector: Caller) => Promise<Response>)[];
 }
 
 /** A record of each kind the caller's own organisation has. */
@@ -38,21 +39,25 @@ const SWEEP = new Map<string, SweepEntry>(<[string, SweepEntry][]>[
   ['POST /v1/crew', { call: (director, own) => director.post('/v1/crew', { name: own.recruit }) }],
   [
     'GET /v1/crew/:ref',
-    { call: (director, own) => director.get(`/v1/crew/${own.crewMember}`), intoArtemis: (helios) => helios.get(`/v1/crew/${ARTEMIS_ONLY.crewMember}`) },
+    { call: (director, own) => director.get(`/v1/crew/${own.crewMember}`), intoArtemis: [(helios) => helios.get(`/v1/crew/${ARTEMIS_ONLY.crewMember}`)] },
   ],
   [
     'PATCH /v1/crew/:ref',
     {
       call: (director, own) => director.patch(`/v1/crew/${own.crewMember}`, { status: 'active' }),
-      intoArtemis: (helios) => helios.patch(`/v1/crew/${ARTEMIS_ONLY.crewMember}`, { name: 'Taken' }),
+      intoArtemis: [(helios) => helios.patch(`/v1/crew/${ARTEMIS_ONLY.crewMember}`, { name: 'Taken' })],
     },
   ],
   [
     'PUT /v1/crew/:ref/skills/:skill',
     {
       call: (director, own) => director.put(`/v1/crew/${own.crewMember}/skills/${own.skill}`, { level: 3 }),
-      // Helios Labs' own CRW-1, with a skill only Artemis has.
-      intoArtemis: (helios) => helios.put(`/v1/crew/CRW-1/skills/${ARTEMIS_ONLY.skill}`, { level: 3 }),
+      intoArtemis: [
+        // An Artemis crew member, with a skill Helios Labs has.
+        (helios) => helios.put(`/v1/crew/${ARTEMIS_ONLY.crewMember}/skills/EVA`, { level: 3 }),
+        // Helios Labs' own crew member, with a skill only Artemis has.
+        (helios) => helios.put(`/v1/crew/CRW-1/skills/${ARTEMIS_ONLY.skill}`, { level: 3 }),
+      ],
     },
   ],
   [
@@ -62,21 +67,24 @@ const SWEEP = new Map<string, SweepEntry>(<[string, SweepEntry][]>[
         await director.put(`/v1/crew/${own.crewMember}/skills/${own.skill}`, { level: 3 });
         return director.delete(`/v1/crew/${own.crewMember}/skills/${own.skill}`);
       },
-      intoArtemis: (helios) => helios.delete(`/v1/crew/${ARTEMIS_ONLY.crewMember}/skills/${ARTEMIS_ONLY.skill}`),
+      intoArtemis: [
+        (helios) => helios.delete(`/v1/crew/${ARTEMIS_ONLY.crewMember}/skills/EVA`),
+        (helios) => helios.delete(`/v1/crew/CRW-1/skills/${ARTEMIS_ONLY.skill}`),
+      ],
     },
   ],
   [
     'GET /v1/crew/:ref/availability',
     {
       call: (director, own) => director.get(`/v1/crew/${own.crewMember}/availability`),
-      intoArtemis: (helios) => helios.get(`/v1/crew/${ARTEMIS_ONLY.crewMember}/availability`),
+      intoArtemis: [(helios) => helios.get(`/v1/crew/${ARTEMIS_ONLY.crewMember}/availability`)],
     },
   ],
   [
     'POST /v1/crew/:ref/availability',
     {
       call: (director, own) => director.post(`/v1/crew/${own.crewMember}/availability`, { from: '2028-01-03', to: '2028-01-05' }),
-      intoArtemis: (helios) => helios.post(`/v1/crew/${ARTEMIS_ONLY.crewMember}/availability`, { from: '2028-01-03', to: '2028-01-05' }),
+      intoArtemis: [(helios) => helios.post(`/v1/crew/${ARTEMIS_ONLY.crewMember}/availability`, { from: '2028-01-03', to: '2028-01-05' })],
     },
   ],
   [
@@ -87,7 +95,7 @@ const SWEEP = new Map<string, SweepEntry>(<[string, SweepEntry][]>[
         const { ref } = (await created.json()) as { ref: string };
         return director.delete(`/v1/availability/${ref}`);
       },
-      intoArtemis: (helios) => helios.delete(`/v1/availability/${ARTEMIS_ONLY.availabilityBlock}`),
+      intoArtemis: [(helios) => helios.delete(`/v1/availability/${ARTEMIS_ONLY.availabilityBlock}`)],
     },
   ],
 ]);
@@ -135,11 +143,23 @@ async function fingerprints(slug: string): Promise<string[]> {
 
 // Runs first, while Helios Labs still has none of the Artemis-only references.
 describe('a Helios Labs director naming Artemis records', () => {
-  const crossing = [...SWEEP].filter(([, entry]) => entry.intoArtemis);
+  const crossings = [...SWEEP].flatMap(([key, entry]) => (entry.intoArtemis ?? []).map((call, index) => [`${key} (${index + 1})`, call] as const));
 
-  it.each(crossing)('calls %s and is told they do not exist', async (_, entry) => {
-    const response = await entry.intoArtemis!(await loginAs(app, 'helios', 'ines@helios.example'));
+  it.each(crossings)('calls %s and is told the record does not exist, and nothing more', async (_, call) => {
+    const response = await call(await loginAs(app, 'helios', 'ines@helios.example'));
     expect(response.status).toBe(404);
+    expect(await response.clone().json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
+    expect(await leaked(response, 'artemis')).toEqual([]);
+  });
+
+  it('refuses a role that may not change crew the same way, whether the record exists or not', async () => {
+    const farid = await loginAs(app, 'helios', 'farid@helios.example');
+    const [artemisOnly, heliosOwn] = [
+      await farid.patch(`/v1/crew/${ARTEMIS_ONLY.crewMember}`, { name: 'Taken' }),
+      await farid.patch('/v1/crew/CRW-1', { name: 'Taken' }),
+    ];
+    expect([artemisOnly.status, heliosOwn.status]).toEqual([403, 403]);
+    expect(await artemisOnly.json()).toEqual(await heliosOwn.json());
   });
 
   it('changed nothing of Artemis along the way', async () => {
@@ -168,9 +188,10 @@ describe('the sweep', () => {
     expect([...registered].sort()).toEqual([...SWEEP.keys(), ...PUBLIC, PIPELINE].sort());
   });
 
-  it('crosses into the other organisation on every route whose path names a record', () => {
+  it('crosses into the other organisation once for every record a route\'s path names', () => {
     const naming = [...SWEEP].filter(([key]) => key.includes(':'));
-    expect(naming.filter(([, entry]) => !entry.intoArtemis).map(([key]) => key)).toEqual([]);
+    const uncrossed = naming.filter(([key, entry]) => (entry.intoArtemis ?? []).length < (key.match(/:/g) ?? []).length);
+    expect(uncrossed.map(([key]) => key)).toEqual([]);
   });
 
   it('finds a leak when there is one', async () => {

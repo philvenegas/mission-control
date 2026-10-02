@@ -4,7 +4,7 @@ import type { Role } from '@mission-control/contract';
  * How far a role's permission reaches: every record in the organisation, or only the caller's
  * own (a crew member's own crew record and what hangs off it).
  */
-export type Scope = 'all' | 'own';
+type Scope = 'all' | 'own';
 
 /**
  * Who may do what (DESIGN.md section 5). Every permission is declared here. The request pipeline
@@ -36,6 +36,16 @@ export type Permission = keyof typeof PERMISSIONS;
 export function scopeOf(role: Role, permission: Permission): Scope | undefined {
   const scopes: Partial<Record<Role, Scope>> = PERMISSIONS[permission];
   return scopes[role];
+}
+
+/**
+ * Whether the caller reaches a record under a permission: every record when their scope is `all`,
+ * only a record that is theirs when it is `own`, none when they lack the permission. A service
+ * answers 404 for a record the caller does not reach.
+ */
+export function reaches(caller: { role: Role; userId: string }, permission: Permission, ownerUserId: string | null): boolean {
+  const scope = scopeOf(caller.role, permission);
+  return scope === 'all' || (scope === 'own' && ownerUserId === caller.userId);
 }
 
 export function can(role: Role, permission: Permission): boolean {

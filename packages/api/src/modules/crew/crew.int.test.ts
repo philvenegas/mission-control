@@ -1,9 +1,13 @@
-import { crewMemberSchema, errorResponseSchema, skillSchema } from '@mission-control/contract';
+import { crewMemberSchema, errorResponseSchema, formatRef, skillSchema } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { SEED_ORGS } from '../../db/seed-data.ts';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
 
 const { app } = useSeededApp();
+
+const [artemisSeed, heliosSeed] = SEED_ORGS;
+const seededCrew = (org: typeof artemisSeed) => org?.crew.length ?? 0;
 
 let dana: Caller; // director
 let sam: Caller; // mission lead
@@ -47,7 +51,7 @@ describe('the skill taxonomy', () => {
 
 describe('reading crew', () => {
   it('lists every crew member, by reference, to a director and a mission lead', async () => {
-    const expected = Array.from({ length: 12 }, (_, index) => `CRW-${index + 1}`);
+    const expected = Array.from({ length: seededCrew(artemisSeed) }, (_, index) => formatRef('crew_member', index + 1));
     expect((await crewList(dana)).map((member) => member.ref)).toEqual(expected);
     expect((await crewList(sam)).map((member) => member.ref)).toEqual(expected);
   });
@@ -87,9 +91,19 @@ describe('adding a crew member', () => {
   it('lets a director add one, numbered next within their organisation', async () => {
     const response = await dana.post('/v1/crew', { name: 'Zoe Park' });
     expect(response.status).toBe(201);
-    expect(await crewMember(response)).toEqual({ ref: 'CRW-13', name: 'Zoe Park', status: 'active', user_email: null, skills: [] });
-    // Helios Labs has eight crew; its next is its own ninth, whatever Artemis has.
-    expect((await crewMember(await ines.post('/v1/crew', { name: 'Ola Berg' }))).ref).toBe('CRW-9');
+    const nextArtemis = formatRef('crew_member', seededCrew(artemisSeed) + 1);
+    expect(await crewMember(response)).toEqual({ ref: nextArtemis, name: 'Zoe Park', status: 'active', user_email: null, skills: [] });
+    // Helios Labs numbers its own crew, whatever Artemis has.
+    expect((await crewMember(await ines.post('/v1/crew', { name: 'Ola Berg' }))).ref).toBe(formatRef('crew_member', seededCrew(heliosSeed) + 1));
+  });
+
+  it('gives crew members added at the same moment different, consecutive references', async () => {
+    const before = (await crewList(dana)).length;
+    const added = await Promise.all(Array.from({ length: 8 }, (_, index) => dana.post('/v1/crew', { name: `Recruit ${index}` })));
+    expect(added.map((response) => response.status)).toEqual(Array(8).fill(201));
+    const refs = await Promise.all(added.map(async (response) => (await crewMember(response)).ref));
+    expect(new Set(refs).size).toBe(8);
+    expect([...refs].sort()).toEqual(Array.from({ length: 8 }, (_, index) => formatRef('crew_member', before + index + 1)).sort());
   });
 
   it('refuses a mission lead and a crew member', async () => {

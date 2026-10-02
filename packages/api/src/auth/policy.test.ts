@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { can, scopeOf } from './policy.ts';
+import { can, reaches, scopeOf } from './policy.ts';
 
 describe('the policy, as DESIGN.md section 5 states it', () => {
   it('lets every role see who they are logged in as, and read the skill taxonomy', () => {
@@ -35,5 +35,26 @@ describe('the policy, as DESIGN.md section 5 states it', () => {
       expect(can('mission_lead', permission)).toBe(false);
       expect(can('crew_member', permission)).toBe(false);
     }
+  });
+});
+
+describe('reaching a record', () => {
+  const ada = { role: 'crew_member' as const, userId: 'user-ada' };
+  const dana = { role: 'director' as const, userId: 'user-dana' };
+  const sam = { role: 'mission_lead' as const, userId: 'user-sam' };
+
+  it('reaches every record when the scope is all, including one with no owner', () => {
+    expect(reaches(dana, 'crew:edit', 'user-ada')).toBe(true);
+    expect(reaches(dana, 'crew:edit', null)).toBe(true);
+  });
+
+  it('reaches only the caller\'s own record when the scope is own', () => {
+    expect(reaches(ada, 'crew:edit', 'user-ada')).toBe(true);
+    expect(reaches(ada, 'crew:edit', 'user-ben')).toBe(false);
+    expect(reaches(ada, 'crew:edit', null)).toBe(false);
+  });
+
+  it('reaches nothing without the permission', () => {
+    expect(reaches(sam, 'crew:edit', 'user-sam')).toBe(false);
   });
 });

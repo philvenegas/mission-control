@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { CREW_STATUSES, MAX_LEVEL, MIN_LEVEL } from './domain.ts';
 import { endsAfterStart, isoDaySchema, PERIOD_ORDER } from './period.ts';
 
-const nonBlank = z.string().trim().min(1);
+/** Longest a name may be. */
+export const MAX_NAME_LENGTH = 120;
+/** Longest an availability block's reason may be. */
+export const MAX_REASON_LENGTH = 500;
+
+const name = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 
 export const skillSchema = z.object({ name: z.string(), category: z.string() });
 export type Skill = z.infer<typeof skillSchema>;
@@ -25,11 +30,11 @@ export const crewMemberSchema = z.object({
 });
 export type CrewMember = z.infer<typeof crewMemberSchema>;
 
-export const createCrewMemberSchema = z.object({ name: nonBlank }).strict();
+export const createCrewMemberSchema = z.object({ name }).strict();
 export type CreateCrewMember = z.infer<typeof createCrewMemberSchema>;
 
 export const updateCrewMemberSchema = z
-  .object({ name: nonBlank.optional(), status: z.enum(CREW_STATUSES).optional() })
+  .object({ name: name.optional(), status: z.enum(CREW_STATUSES).optional() })
   .strict()
   .refine((update) => update.name !== undefined || update.status !== undefined, { message: 'Give a name or a status to change.' });
 export type UpdateCrewMember = z.infer<typeof updateCrewMemberSchema>;
@@ -37,6 +42,7 @@ export type UpdateCrewMember = z.infer<typeof updateCrewMemberSchema>;
 export const setCrewSkillSchema = z
   .object({
     level: z.number().int().min(MIN_LEVEL).max(MAX_LEVEL),
+    /** The day the skill stops counting. Leaving it out, or null, means it does not expire: a PUT replaces the whole skill. */
     certified_until: isoDaySchema.nullable().optional(),
   })
   .strict();
@@ -52,7 +58,7 @@ export const availabilityBlockSchema = z.object({
 export type AvailabilityBlock = z.infer<typeof availabilityBlockSchema>;
 
 export const createAvailabilityBlockSchema = z
-  .object({ from: isoDaySchema, to: isoDaySchema, reason: nonBlank.optional() })
+  .object({ from: isoDaySchema, to: isoDaySchema, reason: z.string().trim().min(1).max(MAX_REASON_LENGTH).optional() })
   .strict()
   .refine(endsAfterStart, PERIOD_ORDER);
 export type CreateAvailabilityBlock = z.infer<typeof createAvailabilityBlockSchema>;
