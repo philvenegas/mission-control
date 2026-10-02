@@ -13,19 +13,22 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 
 - Design document (`DESIGN.md`), final: scope, sixteen recorded decisions, domain model, mission lifecycle, roles and access, matching engine, API, CLI, verification plan and build order.
 - Domain glossary (`CONTEXT.md`) and the `mission-control-domain` agent skill, which holds the fourteen invariants.
-- pnpm workspace with four packages: `contract`, `matcher`, `api` and `cli`. The `matcher` and `cli` packages are placeholders until their build steps.
-- `contract` package: roles, mission and assignment statuses, organisation settings, and formatting and parsing of references (`MSN-12`, `CRW-7`).
+- pnpm workspace with the `contract` and `api` packages. The `matcher` and `cli` packages are created by their own build steps.
+- `contract` package: roles, mission and assignment statuses, transitions, mission event types, and organisation settings with their defaults.
 - Postgres 17 in Docker, published on host port 54329, configured from `.env` (copied from `.env.example`).
-- Two database roles: an owner that runs migrations and the seed, and an API role that owns no table, is not a superuser and cannot bypass row-level security.
-- Database schema for all twelve tables. Every table carries `org_id`, and every foreign key between tenant tables is composite on `(org_id, id)`, so a row cannot reference another organisation's row.
+- Two database roles: an owner that runs migrations and the seed, and an API role that owns no table, is not a superuser and cannot bypass row-level security. The API role can add to `mission_events` and `mission_approvals` but never change or delete them, and cannot create or delete an organisation.
+- Database schema for all twelve tables. Every table carries `org_id`, and every foreign key between tenant tables starts with `org_id`, so a row cannot reference another organisation's row.
+- Check constraints for every status, role, level, decision and event type, generated from the `contract` package's values.
+- An assignment's foreign keys tie its requirement to its own mission and its period to the mission's period, which follows the mission when a draft's period changes.
 - Booking rule as a database exclusion constraint (`no_double_booking`): a crew member's held, offered and accepted assignments never overlap in period. Proposed assignments are not held.
 - References numbered per organisation and per kind, with the last number kept on the organisation row.
-- Seed data for two organisations, Artemis and Helios Labs, with their own skills, settings, users, crew, missions, assignments, approvals and history. All dates are offsets from `SEED_BASE_DATE`. The seed refuses to run when `NODE_ENV` is `production`.
+- Seed data for two organisations, Artemis and Helios Labs, with their own skills, settings, users, crew, missions, assignments, approvals and history. Every date is a number of days from `SEED_BASE_DATE`. The seed refuses to run when `NODE_ENV` is `production`, and changes nothing if its data is unsound.
 - Password hashing with scrypt.
 - `pnpm demo:setup` (start Postgres, create roles and databases, migrate, seed, build; safe to repeat) and `pnpm demo:reset` (reseed).
-- Unit tests (`pnpm test`, no database) and integration tests (`pnpm test:int`, against a separate test database) covering the composite foreign keys, the booking rule, the API role's privileges and the seed.
+- Unit tests (`pnpm test`, no database) and integration tests (`pnpm test:int`, against a separate test database) covering tenant references, the booking rule, assignment integrity, the checked values, the API role's privileges and the seed.
 - `Makefile` wrapping the common setup, test and database commands.
 - `CLAUDE.md` and `docs/agents/` describing the issue tracker, triage labels and domain docs for coding agents.
+- GitHub Actions workflow (`CI`) that typechecks, checks the migrations match the schema, and runs the unit and integration tests against Postgres on every pull request and on `main`.
 - `README.md` with setup steps and a log of where the build diverged from the design.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main
