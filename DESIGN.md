@@ -211,7 +211,7 @@ Each failed check is recorded with its reason. That record is what makes the exp
 
 ### 6.3 Why not greedy
 
-Slots: Pilot (level 3) and Medic (level 3). Crew: Ada is a level 5 pilot and a level 4 medic; Ben is a level 4 pilot only. Greedy fills Medic with Ada (the only medic), fine, but if it fills Pilot first it takes Ada, the best pilot, and Medic is left empty. The correct answer, Ben as pilot and Ada as medic, needs the two choices to be made together. The seed data includes this case.
+Slots: Pilot (level 3) and Medic (level 3). Crew: Ada is a level 5 pilot and a level 4 medic; Ben is a level 4 pilot only. Greedy fills Medic with Ada (the only medic), fine, but if it fills Pilot first it takes Ada, the best pilot, and Medic is left empty. The correct answer, Ben as pilot and Ada as medic, needs the two choices to be made together. The seed data includes this case as the Io Flyby mission.
 
 ### 6.4 Scoring
 
@@ -329,7 +329,7 @@ Principles:
 
 ### The walk-through
 
-The README carries one walk-through in three short acts. It is also the scripted end-to-end test (section 10). References and email addresses below are illustrative; the seed fixes the real ones.
+The README carries one walk-through in three short acts. It is also the scripted end-to-end test (section 10). Mission references match the seed (section 10). Assignment and match run references are illustrative; the README is written from a real run.
 
 **Act 1 — plan to launch.** A two-slot mission, so that few crew logins are needed.
 
@@ -340,38 +340,38 @@ mctl whoami
 mctl profile list
 
 mctl mission create --name "Europa Survey" --from 2027-03-01 --to 2027-03-20
-mctl mission require MSN-4 --skill pilot --level 3
-mctl mission require MSN-4 --skill medic --level 3
-mctl match run MSN-4                       # the proposal, with reasons; nothing changes yet
-mctl match apply RUN-9
-mctl mission submit MSN-4
+mctl mission require MSN-8 --skill pilot --level 3
+mctl mission require MSN-8 --skill medic --level 3
+mctl match run MSN-8                       # the proposal, with reasons; nothing changes yet
+mctl match apply RUN-1
+mctl mission submit MSN-8
 
-mctl mission approve MSN-4                 # refused: a mission lead cannot approve
-mctl mission approve MSN-4 --profile director
+mctl mission approve MSN-8                 # refused: a mission lead cannot approve
+mctl mission approve MSN-8 --profile director
 
 mctl assignment list --profile quin        # the medic sees the offer
 mctl assignment decline ASG-32 --reason "Medical leave" --profile quin
-mctl match run MSN-4 --apply               # fills only the reopened slot
+mctl match run MSN-8 --apply               # fills only the reopened slot
 mctl assignment accept ASG-31 --profile ada
 mctl assignment accept ASG-33 --profile mina
-mctl mission launch MSN-4
-mctl mission history MSN-4                 # who did what, and when
+mctl mission launch MSN-8
+mctl mission history MSN-8                 # who did what, and when
 ```
 
 **Act 2 — a clash.** A seeded draft owned by another mission lead overlaps and wants the same pilot.
 
 ```
-mctl mission show MSN-5                    # problem: clash over Ada Reyes with MSN-6 (draft, owner Priya Nair)
-mctl mission submit MSN-5                  # refused, naming the clash
+mctl mission show MSN-4                    # problem: clash over Ada Reyes with MSN-5 (draft, owner Priya Nair)
+mctl mission submit MSN-4                  # refused, naming the clash
 mctl assignment remove ASG-40              # let her go
-mctl match run MSN-5 --apply
-mctl mission submit MSN-5                  # succeeds
+mctl match run MSN-4 --apply
+mctl mission submit MSN-4                  # succeeds
 ```
 
 **Act 3 — another organisation sees nothing.**
 
 ```
-mctl mission show MSN-4 --profile helios   # not found: MSN-4 is Artemis's
+mctl mission show MSN-8 --profile helios   # not found: MSN-8 is Artemis's
 mctl mission list --profile helios         # only Helios's missions
 mctl crew list --profile helios            # only Helios's crew, with its own skill names
 ```
@@ -383,9 +383,9 @@ Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availabi
 This output is the centrepiece of the CLI. It was chosen from three prototyped variants (branch `prototype/match-output`): a block per slot, with the reasons in words.
 
 ```
-$ mctl match run MSN-4
+$ mctl match run MSN-8
 
-MSN-4  Europa Survey  1–20 Mar 2027
+MSN-8  Europa Survey  1–20 Mar 2027
 ✓ 2 of 2 slots filled
 
 pilot  level 3 or above
@@ -402,9 +402,9 @@ Excluded with the skill:
   CRW-5 Omar Vance — availability block AVL-3, 5–12 Mar
   CRW-4 Noor Haddad — medic certification expires 10 Mar, before the mission ends
 
-Saved as RUN-9. Nothing has changed yet.
-  Apply it:      mctl match apply RUN-9
-  Pick another:  mctl assignment add MSN-4 --crew CRW-2 --skill pilot
+Saved as RUN-1. Nothing has changed yet.
+  Apply it:      mctl match apply RUN-1
+  Pick another:  mctl assignment add MSN-8 --crew CRW-2 --skill pilot
 ```
 
 Rules for this output:
@@ -415,18 +415,18 @@ Rules for this output:
 - **Unfilled slot**: the count of crew lost to each reason, the two nearest misses with what each lacks, and the commands that would make the slot fillable.
 
   ```
-  medic 2 of 2  level 4 or above
-    ✗ unfilled — nobody qualifies: 1 below level 4, 1 has an availability block, 11 do not have medic
-      nearest: CRW-13 Tala Moreno — medic level 5, availability block AVL-8, 1–14 Apr
-      nearest: CRW-12 Sven Dahl — medic level 3, needs 4
-      lower the level:  mctl mission require MSN-7 --skill medic --level 3 --count 2
-      or the headcount: mctl mission require MSN-7 --skill medic --level 4 --count 1
+  geologist 2 of 2  level 4 or above
+    ✗ unfilled — nobody qualifies: 1 below level 4, 1 has an availability block, 9 do not have geologist
+      nearest: CRW-12 Tala Moreno — geologist level 5, availability block AVL-8, 1–14 Apr
+      nearest: CRW-11 Sven Dahl — geologist level 3, needs 4
+      lower the level:  mctl mission require MSN-6 --skill geologist --level 3 --count 2
+      or the headcount: mctl mission require MSN-6 --skill geologist --level 4 --count 1
   ```
 
 - **Clash**: a crew member chosen despite a clash carries a warning naming the other mission, its status and its owner, and saying that neither mission can be submitted until one lets them go.
 - **Excluded with the skill**: crew who hold a required skill but were ruled out, each with the reason; at most five, then "and N more".
 - **Footer**: the run's reference, "Nothing has changed yet", and the next commands.
-- `mctl match show RUN-9` prints the same thing later. `mctl mission show` uses one line per slot (slot, crew member, score, any problem) because there the crew is context.
+- `mctl match show RUN-1` prints the same thing later. `mctl mission show` uses one line per slot (slot, crew member, score, any problem) because there the crew is context.
 
 ## 9. Code structure
 
@@ -491,7 +491,57 @@ Clash scenarios. Sam and Priya are mission leads; Ada is a crew member.
 | 16 | A slot is unfilled; the organisation is strict | Submit is refused |
 | 17 | A slot is unfilled; the organisation allows it | Submit and approval succeed; launch is refused until the slot is filled and accepted |
 
-Seed data: two organisations with different skill taxonomies and settings (one needs two approvals), around fifteen crew each, missions in several statuses, the greedy-fails case, and one mission that cannot be fully staffed so the unfilled-slot explanation is visible.
+### Seed data
+
+Running the seed wipes and rebuilds all data, so the walk-through can be repeated from a clean state. Every seeded user has the password `mission-control-demo`, which the seed prints; the seed refuses to run when `NODE_ENV` is `production`. All dates are offsets from one constant, `SEED_BASE_DATE = 2026-10-01`; moving it forward is a one-line change once the 2027 dates pass.
+
+| | Artemis (`artemis`) | Helios Labs (`helios`) |
+|---|---|---|
+| Kind | Space agency | Research lab |
+| `approvals_required` | 1 | 2 |
+| `allow_unfilled_submission` | false | true |
+| `match_weights` (proficiency / workload / rest) | 45 / 35 / 20 | 60 / 25 / 15 |
+| Skills | pilot, medic, engineer, geologist, comms, navigator | flight operations, field medicine, robotics, spectroscopy, EVA |
+| Directors | Dana Okoye, Marcus Hale | Ines Varga, Tomas Brandt, Yuki Mori |
+| Mission leads | Sam Okafor, Priya Nair | Farid Rahimi |
+| Crew | 12, three with logins | 8, none with logins |
+
+Emails are `<first name>@<slug>.example`. Demo profiles: `lead` Sam, `director` Dana, `ada`, `quin`, `mina`, and `helios` Farid.
+
+Artemis crew. Only Ada, Mina and Quin have users; the rest are crew records with no login (D5).
+
+| Ref | Name | Skills (level) | Notes |
+|---|---|---|---|
+| CRW-1 | Ada Reyes | pilot 5, medic 4 | Proposed on both clashing drafts |
+| CRW-2 | Ben Osei | pilot 4 | |
+| CRW-3 | Mina Farouk | medic 4, engineer 3 | Held by Phobos Survey in June |
+| CRW-4 | Noor Haddad | engineer 5, medic 3 | Medic certification expires 10 Mar 2027 |
+| CRW-5 | Omar Vance | medic 5 | Availability blocks 5–12 Mar and 1–30 Jun 2027 |
+| CRW-6 | Kira Novak | engineer 5, medic 3 | On Lunar Gateway Resupply |
+| CRW-7 | Quin Abara | medic 3 | Held by Phobos Survey in June |
+| CRW-8 | Leo Adeyemi | engineer 4, navigator 3 | On Lunar Gateway Resupply |
+| CRW-9 | Cy Lindqvist | pilot 3, comms 3 | On Lunar Gateway Resupply |
+| CRW-10 | Rosa Imani | geologist 4, comms 2 | |
+| CRW-11 | Sven Dahl | geologist 3, navigator 4 | |
+| CRW-12 | Tala Moreno | geologist 5 | Availability block 1–14 Apr 2027 |
+
+Artemis missions.
+
+| Ref | Mission | Period | Status | Owner | What it shows |
+|---|---|---|---|---|---|
+| MSN-1 | Lunar Gateway Resupply | 15 Oct 2026 – 10 Feb 2027 | active | Sam | Accepted crew who are held; a recent workload for Kira, Leo and Cy |
+| MSN-2 | Mars Relay Repair | 1–25 Sep 2026 | completed | Priya | History |
+| MSN-3 | Phobos Survey | 1–30 Jun 2027 | submitted | Priya | Held crew (Mina, Quin) excluded elsewhere; ready for a director to approve or reject |
+| MSN-4 | Ceres Resupply | 3–24 May 2027 | draft | Sam | Proposes Ada as pilot: one side of the clash (act 2) |
+| MSN-5 | Vesta Mapping | 10–31 May 2027 | draft | Priya | Proposes Ada as pilot: the other side |
+| MSN-6 | Titan Relay | 4–30 Apr 2027 | draft | Sam | Needs two geologists at level 4; only Rosa qualifies, Tala is on leave, Sven is level 3: the unfilled-slot explanation |
+| MSN-7 | Io Flyby | 7–21 Jun 2027 | draft | Sam | Needs a pilot at 3 and a medic at 4. Ada is the best pilot and the only medic at 4 who is free, so filling slot by slot fails; the matcher makes Ben the pilot and Ada the medic |
+
+The reviewer's mission in act 1, Europa Survey (1–20 Mar 2027, a pilot and a medic at level 3), is therefore MSN-8. It must come out as Ada pilot and Quin medic, with Mina as the replacement when Quin declines; the seed's workloads are tuned so that it does, and the end-to-end test asserts it.
+
+Helios missions: Solar Corona Probe, submitted, with one of two approvals given; Mercury Flyby, a draft with one slot open that can still be submitted.
+
+The seed is checked by a test that runs the matcher over MSN-6, MSN-7 and the act 1 mission and asserts the outcomes named above.
 
 ## 11. Build order
 
