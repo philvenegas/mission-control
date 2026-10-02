@@ -14,6 +14,7 @@ import {
   type MissionEventType,
   type MissionStatus,
   type OrgSettings,
+  type Period,
   ROLES,
   type Role,
 } from '@mission-control/contract';
@@ -33,9 +34,14 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { fromDaterange, toDaterange } from './period.ts';
 
-/** A period: start inclusive, end exclusive, written `[2027-03-01,2027-03-20)`. */
-export const daterange = customType<{ data: string }>({ dataType: () => 'daterange' });
+/** A period, stored as a Postgres daterange: start inclusive, end exclusive. */
+export const daterange = customType<{ data: Period; driverData: string }>({
+  dataType: () => 'daterange',
+  toDriver: toDaterange,
+  fromDriver: fromDaterange,
+});
 
 const id = () => uuid('id').primaryKey().defaultRandom();
 const orgId = () =>

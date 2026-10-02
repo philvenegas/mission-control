@@ -1,5 +1,6 @@
 import { loginResponseSchema } from '@mission-control/contract';
 import { afterAll, beforeAll } from 'vitest';
+import type { z } from 'zod';
 import type { TokenSettings } from '../auth/token.ts';
 import { DEMO_PASSWORD, seed } from '../db/seed.ts';
 import { type App, createApp } from '../http/app.ts';
@@ -43,8 +44,18 @@ export async function loginAs(app: App, org: string, email: string, password = D
 }
 
 export function callerWith(app: App, token: string) {
-  const request = (method: string) => (path: string) => app.request(path, { method, headers: { Authorization: `Bearer ${token}` } });
-  return { get: request('GET'), post: request('POST') };
+  const request = (method: string) => (path: string, body?: unknown) =>
+    app.request(path, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  return { get: request('GET'), post: request('POST'), put: request('PUT'), patch: request('PATCH'), delete: request('DELETE') };
 }
 
 export type Caller = ReturnType<typeof callerWith>;
+
+/** The body of a response, checked against the contract's schema for it. */
+export async function bodyOf<Schema extends z.ZodType>(response: Response, schema: Schema): Promise<z.infer<Schema>> {
+  return schema.parse(await response.json());
+}
