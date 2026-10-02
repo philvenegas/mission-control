@@ -84,6 +84,14 @@ _Avoid_: Action, state change
 A condition that must hold for a transition to happen.
 _Avoid_: Precondition, validation
 
+**Submission**:
+One trip of a mission through approval, from submit until it is approved or rejected.
+_Avoid_: Approval request, review round
+
+**Approval policy**:
+An organisation's rule for when a submission counts as approved; today, how many directors must approve.
+_Avoid_: Approval process, workflow, approval settings
+
 **Approval**:
 One director's recorded decision on one submission of a mission.
 _Avoid_: Sign-off, review

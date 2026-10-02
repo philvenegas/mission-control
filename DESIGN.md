@@ -64,10 +64,10 @@ Every table carries its own `org_id` column, including the child tables below wh
 | `skills` | `id`, `org_id`, `name`, `category` | Unique on `(org_id, name)` |
 | `crew_skills` | `crew_member_id`, `skill_id`, `level` 1–5, `certified_until` (nullable) | Levels: 1 novice, 3 competent, 5 expert |
 | `availability_blocks` | `id`, `crew_member_id`, `period` (daterange), `reason` | Crew are available unless a block says otherwise |
-| `missions` | `id`, `org_id`, `ref`, `name`, `description`, `period` (daterange), `status`, `owner_id`, `submitted_by` | `ref` is a per-organisation number shown as `MSN-12` |
+| `missions` | `id`, `org_id`, `ref`, `name`, `description`, `period` (daterange), `status`, `owner_id`, `submitted_by`, `submission_no` | `ref` is a per-organisation number shown as `MSN-12` |
 | `mission_requirements` | `id`, `mission_id`, `skill_id`, `min_level`, `headcount` | Each unit of headcount is one slot |
 | `assignments` | `id`, `mission_id`, `requirement_id`, `crew_member_id`, `period`, `status`, `score`, `decline_reason` | `period` is copied from the mission |
-| `mission_approvals` | `id`, `mission_id`, `approver_id`, `decision`, `note`, `created_at` | One row per decision |
+| `mission_approvals` | `id`, `mission_id`, `submission_no`, `approver_id`, `decision`, `note`, `created_at` | One row per decision. Unique on `(mission_id, submission_no, approver_id)` |
 | `mission_events` | `id`, `mission_id`, `actor_id`, `type`, `from_status`, `to_status`, `note`, `created_at` | Append-only audit log |
 | `match_runs` | `id`, `mission_id`, `created_by`, `result` (jsonb), `created_at` | The saved proposal and its explanation |
 
@@ -95,13 +95,23 @@ draft ──submit──▶ submitted ──approve──▶ approved ──laun
 
 | Transition | Who | Guard | Effect |
 |---|---|---|---|
-| `submit` | Owner (lead) or director | At least one requirement; period in the future; every slot has a proposed crew member | Sets `submitted_by` |
+| `submit` | Owner (lead) or director | At least one requirement; period in the future; every slot has a proposed crew member; enough directors other than the submitter exist to meet `approvals_required` | Sets `submitted_by`; starts a new submission (`submission_no` + 1) |
 | `withdraw` *(designed, not built)* | Submitter | — | Back to `draft` |
-| `reject` | Director, not the submitter | Note required | Back to `draft`; assignments stay `proposed` |
-| `approve` | Director, not the submitter | Has not already approved this submission | Records approval. When approvals reach `approvals_required`: status `approved`, assignments `proposed → offered` |
+| `reject` | Director, not the submitter | Note required | Back to `draft`; assignments stay `proposed`. Approvals already given to this submission no longer count |
+| `approve` | Director, not the submitter | Has not already approved this submission | Records approval. When the approval policy is met: status `approved`, assignments `proposed → offered`. Otherwise the mission stays `submitted` |
 | `launch` | Owner or director | Every slot `accepted` | Status `active` |
 | `complete` | Owner or director | — | Status `completed` |
 | `cancel` | Owner or director; director only once `active` | Note required | Live assignments `→ released` |
+
+### Approval policy
+
+A **submission** is one trip of a mission through approval. Approvals belong to a submission, so a resubmitted mission starts again from zero: it could have been edited while back in `draft`.
+
+Whether a submission is approved is decided by one pure function, `approvalState(policy, approvals) → pending | approved`. Today the policy is `{ approvals_required }` and the function counts approvals from distinct directors. A single rejection ends the submission. The policy is seeded per organisation; one seed organisation requires one approval and the other two.
+
+Submit is refused when the organisation has fewer directors able to approve than the policy requires, the submitter excluded: "Artemis requires 2 approvals, but only 1 director other than you can approve." A mission never waits on an approval that cannot come.
+
+`mctl mission approve` reports progress ("Approved (1 of 2). MSN-4 stays submitted until one more director approves."), and `mctl mission show` lists who has approved.
 
 Rules that follow from this:
 
@@ -320,7 +330,7 @@ Rules for whoever writes the code, human or agent:
 |---|---|
 | Matcher correctness | Unit tests per constraint and scorer; the greedy-fails case; a property test comparing the solver with brute force on small random inputs; a determinism test |
 | Tenant isolation | Integration tests against real Postgres. (1) A sweep: a user from organisation B calls every route; lists contain no organisation A rows, and references that exist only in A give `404`. (2) A coverage test that fails when a registered route is missing from the sweep. (3) A direct database test that a row linking to another organisation's row is rejected by the composite foreign key. (4) A response with status 400 or above leaves no writes behind. With the stretch step: a direct query with B's tenant set returns no A rows, and the API's database role cannot bypass policies |
-| Lifecycle | A table-driven test over every (status, transition, role) combination; self-approval refused for leads and directors; two-approval policy |
+| Lifecycle | A table-driven test over every (status, transition, role) combination; self-approval refused for leads and directors; `approvalState` unit tests; with two approvals required: one approval leaves the mission `submitted`, the same director cannot approve twice, a rejection voids the earlier approval, and submit is refused when too few directors can approve |
 | Double booking | Two concurrent `apply` calls for the same crew member and overlapping periods: exactly one succeeds, the other gets `409` |
 | CLI | The section 8 walk-through as a scripted end-to-end test against a seeded database, asserting exit codes and `--json` output |
 
@@ -347,7 +357,7 @@ Stretch, in order, if time remains: row-level security policies (60–90), then 
 ## 12. How the design extends
 
 - **Resource constraints** (vehicles, equipment, budgets): a resource becomes another schedulable entity with the same exclusion-constraint pattern, and its limits become hard constraints in the matcher's list. Limits that span the team move the solver from assignment to integer programming behind the same interface.
-- **Different approval workflows** (multi-stage, by mission size, delegated approvers): the policy settings grow into an ordered list of stages, each naming who may approve; `lifecycle.ts` and `mission_approvals` already record decisions individually.
+- **Different approval workflows** (multi-stage, by mission size, delegated approvers): the policy grows from a single number into an ordered list of stages, each naming who may approve, and only `approvalState` changes; `mission_approvals` already records each decision against its submission.
 - **Scale**: the matcher loads only crew who hold a required skill; if organisations reach thousands of crew, shortlist per slot before solving.
 
 ## 13. Open questions
