@@ -315,33 +315,105 @@ Principles:
 - Destructive commands ask for confirmation unless `--yes` is given.
 - After a successful command, print the likely next command.
 
-The walk-through a reviewer should be able to run from the README:
+### The walk-through
+
+The README carries one walk-through in three short acts. It is also the scripted end-to-end test (section 10). References and email addresses below are illustrative; the seed fixes the real ones.
+
+**Act 1 — plan to launch.** A two-slot mission, so that few crew logins are needed.
 
 ```
-mctl login --org artemis --email lead@artemis.example --profile lead
-                               # then --profile director, --profile crew
+mctl login --org artemis --email sam@artemis.example --profile lead
 mctl whoami
 
 mctl mission create --name "Europa Survey" --from 2027-03-01 --to 2027-03-20
 mctl mission require MSN-4 --skill pilot --level 3
-mctl mission require MSN-4 --skill medic --level 3 --count 2
-mctl match run MSN-4                    # proposal with scores and reasons
+mctl mission require MSN-4 --skill medic --level 3
+mctl match run MSN-4                       # the proposal, with reasons; nothing changes yet
 mctl match apply RUN-9
 mctl mission submit MSN-4
 
-mctl mission approve MSN-4 --profile lead       # refused: not a director
+mctl mission approve MSN-4                 # refused: a mission lead cannot approve
 mctl mission approve MSN-4 --profile director
 
-mctl assignment list --profile crew
-mctl assignment decline ASG-31 --reason "Medical leave" --profile crew
-mctl match run MSN-4 --apply            # fills only the reopened slot
+mctl assignment list --profile quin        # the medic sees the offer
+mctl assignment decline ASG-32 --reason "Medical leave" --profile quin
+mctl match run MSN-4 --apply               # fills only the reopened slot
+mctl assignment accept ASG-31 --profile ada
+mctl assignment accept ASG-33 --profile mina
 mctl mission launch MSN-4
-mctl mission history MSN-4              # the audit trail
+mctl mission history MSN-4                 # who did what, and when
+```
+
+**Act 2 — a clash.** A seeded draft owned by another mission lead overlaps and wants the same pilot.
+
+```
+mctl mission show MSN-5                    # problem: clash over Ada Reyes with MSN-6 (draft, owner Priya Nair)
+mctl mission submit MSN-5                  # refused, naming the clash
+mctl assignment remove ASG-40              # let her go
+mctl match run MSN-5 --apply
+mctl mission submit MSN-5                  # succeeds
+```
+
+**Act 3 — another organisation sees nothing.**
+
+```
+mctl login --org helios --email lead@helios.example --profile helios
+mctl mission show MSN-4 --profile helios   # not found: MSN-4 is Artemis's
+mctl mission list --profile helios         # only Helios's missions
+mctl crew list --profile helios            # only Helios's crew, with its own skill names
 ```
 
 Other commands: `mctl crew list|show|add`, `mctl crew skill set`, `mctl availability add|list|remove`, `mctl skill list`, `mctl mission list|show|unrequire|reject|cancel|complete`, `mctl assignment add|remove|clear`, `mctl match show`, `mctl org show`.
 
-`mctl match run` is the centrepiece and its output gets the most design attention: one row per slot with crew, score and component bars; alternates indented beneath; unfilled slots in a separate block with the reason counts and nearest miss.
+### What `mctl match run` prints
+
+This output is the centrepiece of the CLI. It was chosen from three prototyped variants (branch `prototype/match-output`): a block per slot, with the reasons in words.
+
+```
+$ mctl match run MSN-4
+
+MSN-4  Europa Survey  1–20 Mar 2027
+✓ 2 of 2 slots filled
+
+pilot  level 3 or above
+  → Ada Reyes CRW-1   score 84
+    level 5 (36 of 45) · 20 of 180 days assigned (31 of 35) · 25 days rested (17 of 20)
+    alternates: Ben Osei 79, Cy Lindqvist 57
+
+medic  level 3 or above
+  → Quin Abara CRW-7   score 79
+    level 3 (27 of 45) · 15 of 180 days assigned (32 of 35) · 30 days rested (20 of 20)
+    alternates: Mina Farouk 76
+
+Excluded with the skill:
+  CRW-5 Omar Vance — availability block AVL-3, 5–12 Mar
+  CRW-4 Noor Haddad — medic certification expires 10 Mar, before the mission ends
+
+Saved as RUN-9. Nothing has changed yet.
+  Apply it:      mctl match apply RUN-9
+  Pick another:  mctl assignment add MSN-4 --crew CRW-2 --skill pilot
+```
+
+Rules for this output:
+
+- **Verdict first**: slots filled out of total, green tick when full, amber when not.
+- **Each chosen crew member** shows the score and, in words, what earned it: each component's points out of its maximum.
+- **Alternates**: up to three per slot, with scores. One already chosen for another slot says so.
+- **Unfilled slot**: the count of crew lost to each reason, the two nearest misses with what each lacks, and the commands that would make the slot fillable.
+
+  ```
+  medic 2 of 2  level 4 or above
+    ✗ unfilled — nobody qualifies: 1 below level 4, 1 has an availability block, 11 do not have medic
+      nearest: CRW-13 Tala Moreno — medic level 5, availability block AVL-8, 1–14 Apr
+      nearest: CRW-12 Sven Dahl — medic level 3, needs 4
+      lower the level:  mctl mission require MSN-7 --skill medic --level 3 --count 2
+      or the headcount: mctl mission require MSN-7 --skill medic --level 4 --count 1
+  ```
+
+- **Clash**: a crew member chosen despite a clash carries a warning naming the other mission, its status and its owner, and saying that neither mission can be submitted until one lets them go.
+- **Excluded with the skill**: crew who hold a required skill but were ruled out, each with the reason; at most five, then "and N more".
+- **Footer**: the run's reference, "Nothing has changed yet", and the next commands.
+- `mctl match show RUN-9` prints the same thing later. `mctl mission show` uses one line per slot (slot, crew member, score, any problem) because there the crew is context.
 
 ## 9. Code structure
 
