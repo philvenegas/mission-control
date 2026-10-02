@@ -1,0 +1,20 @@
+{
+  "name": "mission-control",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "demo:setup": "bash scripts/demo-setup.sh",
+    "demo:reset": "pnpm --filter @mission-control/api db:seed",
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:int": "vitest run --config vitest.int.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
