@@ -11,7 +11,8 @@ import {
 describe('the shared domain values', () => {
   it('counts held, offered and accepted assignments as live, and no others', () => {
     expect(LIVE_ASSIGNMENT_STATUSES).toEqual(['held', 'offered', 'accepted']);
-    expect(ASSIGNMENT_STATUSES.filter((status) => !LIVE_ASSIGNMENT_STATUSES.includes(status as never))).toEqual([
+    const live: readonly string[] = LIVE_ASSIGNMENT_STATUSES;
+    expect(ASSIGNMENT_STATUSES.filter((status) => !live.includes(status))).toEqual([
       'proposed',
       'declined',
       'released',

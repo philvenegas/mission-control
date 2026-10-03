@@ -12,7 +12,7 @@ import {
 /** Every seeded date is a number of days from this one. Move it forward once the 2027 dates pass. */
 export const SEED_BASE_DATE = '2026-10-01';
 
-export interface CrewSeed {
+interface CrewSeed {
   name: string;
   /** Has a user, and so can log in. */
   login?: boolean;

@@ -1,18 +1,22 @@
+import { availabilityBlockSchema } from '@mission-control/contract';
 import { describe, expect, it } from 'vitest';
-import { type Caller, loginAs, useSeededApp } from '../test/app.ts';
+import { bodyOf, type Caller, loginAs, useSeededApp } from '../test/app.ts';
 import { routeKey } from './route.ts';
 
 const { app, owner } = useSeededApp();
 
+/** What a `Caller` method gives. */
+type Answer = ReturnType<Caller['get']>;
+
 interface SweepEntry {
   /** How a director calls the route on their own organisation's records. It must succeed. */
-  call: (director: Caller, own: OwnRecords) => Promise<Response>;
+  call: (director: Caller, own: OwnRecords) => Answer;
   /**
    * How a Helios Labs director calls it naming Artemis records that Helios Labs does not have,
    * one call per record the path names. Each must answer 404. Required for every route whose path
    * names a record.
    */
-  intoArtemis?: ((heliosDirector: Caller) => Promise<Response>)[];
+  intoArtemis?: ((heliosDirector: Caller) => Answer)[];
 }
 
 /** A record of each kind the caller's own organisation has. */
@@ -31,7 +35,7 @@ const ARTEMIS_ONLY = { crewMember: 'CRW-12', availabilityBlock: 'AVL-1', skill: 
  * below fails when a registered route is missing. Each is called by a director of each
  * organisation, and the answer must hold nothing of the other organisation and no internal id.
  */
-const SWEEP = new Map<string, SweepEntry>(<[string, SweepEntry][]>[
+const SWEEP_ENTRIES: [string, SweepEntry][] = [
   ['GET /v1/me', { call: (director) => director.get('/v1/me') }],
   ['GET /v1/org', { call: (director) => director.get('/v1/org') }],
   ['GET /v1/skills', { call: (director) => director.get('/v1/skills') }],
@@ -92,13 +96,14 @@ const SWEEP = new Map<string, SweepEntry>(<[string, SweepEntry][]>[
     {
       call: async (director, own) => {
         const created = await director.post(`/v1/crew/${own.crewMember}/availability`, { from: '2028-02-01', to: '2028-02-02' });
-        const { ref } = (await created.json()) as { ref: string };
+        const { ref } = await bodyOf(created, availabilityBlockSchema);
         return director.delete(`/v1/availability/${ref}`);
       },
       intoArtemis: [(helios) => helios.delete(`/v1/availability/${ARTEMIS_ONLY.availabilityBlock}`)],
     },
   ],
-]);
+];
+const SWEEP = new Map(SWEEP_ENTRIES);
 
 /** Routes that need no login and so act for no organisation. */
 const PUBLIC = ['GET /v1/health', 'POST /v1/auth/login'];

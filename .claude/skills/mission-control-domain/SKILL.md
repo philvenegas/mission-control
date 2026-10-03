@@ -49,4 +49,8 @@ When a decision changes: a term moves in `CONTEXT.md`, a mechanic in `DESIGN.md`
 
 ## Done
 
-A change is done when every domain name it introduces is a term in `CONTEXT.md`, and every invariant it touches is exercised by a test in the same change.
+A change is done when:
+
+- every domain name it introduces is a term in `CONTEXT.md`;
+- every invariant it touches is exercised by a test in the same change;
+- every difference from the `DESIGN.md` sections its ticket names has a line, with its reason, in the README section "Where the build diverged from the design": what was deferred, what was added, and what was decided where the design was silent (an extra response field, a status code, seed data it did not name).

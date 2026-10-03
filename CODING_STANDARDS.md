@@ -4,10 +4,12 @@ How code is written in this repository. `DESIGN.md` says what to build and `CONT
 
 A rule here outranks a general habit. Where a rule and `DESIGN.md` disagree, the design wins and the conflict is raised, not worked around.
 
+Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `knip`) and fail CI, so a review need not look for them.
+
 ## Scope
 
 - **No placeholders.** A package, file, export or setting exists only once something uses it and a test covers it. An empty package "for later" is created by the step that fills it. *Step 1 first shipped empty `matcher` and `cli` packages and settings for a later step; all were removed.*
-- **No unused exports.** A helper written for a future caller is deleted until that caller exists.
+- **No unused exports, files or dependencies** *(checked)*. A helper written for a future caller is deleted until that caller exists.
 - **Build one step at a time.** Settings, tables and helpers arrive with the step that needs them.
 - **Record every divergence from the design** in the README section "Where the build diverged from the design", with its reason, in the same change. That includes things the design asked for that are deferred, and detail added that the design left open (for example, seed crew it did not name).
 
@@ -37,7 +39,7 @@ A rule here outranks a general habit. Where a rule and `DESIGN.md` disagree, the
 
 - **Values go in as parameters.** Where SQL cannot take a parameter (role and database names), the text is validated as a plain identifier by one function before it is used, and that function's rejections are tested.
 - **Setup scripts are safe to run again** and say what each step did.
-- **Read configuration through `requireEnv`,** which names the missing setting and how to create it. No `process.env.X!`.
+- **Read configuration through `requireEnv`,** which names the missing setting and how to create it. (`process.env.X!` is already refused by the check on `!`.)
 
 ## Errors
 
@@ -46,13 +48,13 @@ A rule here outranks a general habit. Where a rule and `DESIGN.md` disagree, the
 
 ## Types
 
-- **No casts to get past the compiler** (`as unknown as`, `as [...]`, `!` on a lookup that can miss). Fix the type instead: widen a parameter to the shared supertype, or make an impossible case unrepresentable (`Exclude<MissionStatus, 'cancelled'>`).
+- **No casts to get past the compiler** *(checked: no `as` but `as const`, no `!`)*. Fix the type instead: widen a parameter to the shared supertype, or make an impossible case unrepresentable (`Exclude<MissionStatus, 'cancelled'>`). For the one row a query must return, use `exactlyOne` (`onlyRow` in tests); parse a response body with its contract schema (`bodyOf`).
 - **A lookup table over a union is a full `Record`,** not a `Partial` read with `!`.
 - **Use the contract's type** (`Role`) rather than deriving one from a table.
 
 ## Tests
 
-- **Every branch that can throw has a test,** including guards in scripts. The guard in front of raw SQL was the review's most serious finding precisely because it was untested.
+- **Every branch that can throw has a test,** including guards in scripts. The guard in front of raw SQL was the review's most serious finding precisely because it was untested. `pnpm test:coverage` lists every file's uncovered lines; a review checks each one the diff touches. CI fails if coverage falls below the thresholds in `vitest.config.ts`, which only ever rise.
 - **Write the test first** where the behaviour is known, and name it as behaviour: `refuses a second live assignment that overlaps, whatever the application does`.
 - **Test through the real thing.** Database rules are tested against Postgres, not mocked. Unit tests (`*.test.ts`) need no database; integration tests (`*.int.test.ts`) use the test database.
 - **Assert the outcome a person would check:** calendar dates, references, names. Not row counts alone.

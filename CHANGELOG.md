@@ -43,5 +43,14 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - The isolation sweep now also calls every route that names a record with another organisation's references, and checks every response carries no internal id.
 - `CODING_STANDARDS.md`: the rules for writing code here, each with the reason it was adopted.
 - `README.md` with setup steps and a log of where the build diverged from the design.
+- `pnpm lint`: ESLint with typescript-eslint, refusing type assertions other than `as const` and non-null assertions, plus knip, which finds unused exports, files and dependencies. CI runs it before the typecheck.
+- `pnpm test:coverage`: the unit and integration tests in one run, as two Vitest projects, reporting every file's uncovered lines. CI runs it in place of the integration tests and fails when coverage falls below the recorded thresholds.
+- The domain skill's definition of done now includes recording every divergence from the design in the README.
+
+### Fixed
+
+- Type assertions and non-null assertions in the seed and the tests, replaced by checked lookups (`onlyRow`) and contract schemas. Removing one exposed a mistyped isolation sweep entry, now typed to what a test caller returns.
+- `PERMISSIONS` and `CrewSeed` are no longer exported, as nothing outside their files uses them.
+- A stored password hash cut short is now covered by a test.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

@@ -1,9 +1,17 @@
 import { defineConfig } from 'vitest/config';
 
-// Unit tests. They need no database.
+// The unit and integration tests, as two projects, so one run with --coverage measures both.
 export default defineConfig({
   test: {
-    include: ['packages/*/src/**/*.test.ts'],
-    exclude: ['**/node_modules/**', '**/*.int.test.ts'],
+    projects: ['vitest.unit.config.ts', 'vitest.int.config.ts'],
+    coverage: {
+      provider: 'v8',
+      include: ['packages/*/src/**/*.ts'],
+      exclude: ['**/*.test.ts', 'packages/*/src/test/**'],
+      // Every file not fully covered, with its uncovered lines: the list a reviewer checks for untested throws.
+      reporter: [['text', { skipFull: true }]],
+      // The level reached when coverage was first measured. Raise these as gaps close; never lower them.
+      thresholds: { statements: 95, branches: 96, functions: 98, lines: 95 },
+    },
   },
 });

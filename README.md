@@ -13,6 +13,8 @@ pnpm demo:setup      # start Postgres, create roles and databases, migrate, seed
 pnpm api             # the API on http://localhost:3000, in a terminal of its own (PORT in .env changes it)
 pnpm test            # unit tests; no database needed
 pnpm test:int        # integration tests, against a separate test database
+pnpm test:coverage   # both, with every file's uncovered lines
+pnpm lint            # lint, and find unused exports, files and dependencies
 pnpm demo:reset      # reseed
 ```
 

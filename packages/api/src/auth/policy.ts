@@ -11,7 +11,7 @@ type Scope = 'all' | 'own';
  * checks that the caller's role holds the route's permission (403 if not); a service then applies
  * the scope to the record, and a record outside it answers 404, as if it did not exist.
  */
-export const PERMISSIONS = {
+const PERMISSIONS = {
   /** See who you are logged in as. */
   'me:read': { director: 'all', mission_lead: 'all', crew_member: 'all' },
   /** Read the organisation and its settings. */

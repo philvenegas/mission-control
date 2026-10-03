@@ -48,6 +48,9 @@ jobs:
       - name: Environment
         run: cp .env.example .env
 
+      - name: Lint
+        run: pnpm lint
+
       - name: Typecheck
         run: pnpm build
 
@@ -66,5 +69,6 @@ jobs:
           pnpm --filter @mission-control/api db:migrate
           pnpm --filter @mission-control/api db:seed
 
-      - name: Integration tests
-        run: pnpm test:int
+      # Runs the unit tests again alongside the integration tests, so coverage measures both.
+      - name: Integration tests, with coverage
+        run: pnpm test:coverage

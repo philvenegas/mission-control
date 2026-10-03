@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyPassword } from '../auth/password.ts';
-import { connectAsOwner } from '../test/database.ts';
+import { connectAsOwner, onlyRow } from '../test/database.ts';
+import { exactlyOne } from './rows.ts';
 import { DEMO_PASSWORD, seed } from './seed.ts';
 import { type OrgSeed, SEED_ORGS } from './seed-data.ts';
 
@@ -163,13 +164,17 @@ describe('the seed', () => {
     } finally {
       process.env.NODE_ENV = before;
     }
-    expect((await sql`SELECT count(*)::int AS n FROM organisations`)[0]!.n).toBe(2);
+    expect(await onlyRow(sql`SELECT count(*)::int AS organisations FROM organisations`, 'count')).toEqual({ organisations: 2 });
   });
 
   describe('given unsound data', () => {
-    const artemis = SEED_ORGS[0]!;
+    const artemis = exactlyOne(SEED_ORGS.filter((org) => org.slug === 'artemis'), 'seeded Artemis');
+    const gatewayResupply = exactlyOne(
+      artemis.missions.filter((mission) => mission.name === 'Lunar Gateway Resupply'),
+      'seeded Lunar Gateway Resupply',
+    );
     const withMission = (change: Partial<OrgSeed['missions'][number]>): OrgSeed[] => [
-      { ...artemis, missions: [{ ...artemis.missions[0]!, ...change }] },
+      { ...artemis, missions: [{ ...gatewayResupply, ...change }] },
     ];
     const pilots = (crew: string[], headcount: number) => [{ skill: 'pilot', minLevel: 3, headcount, crew }];
 
