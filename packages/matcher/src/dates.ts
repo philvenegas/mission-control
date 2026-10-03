@@ -16,5 +16,5 @@ export const daysBetween = (from: string, to: string) => toDays(to) - toDays(fro
 export const lastDay = (period: Period) => addDays(period.to, -1);
 
 /** How many days two periods share. */
-export const sharedDays = (a: Period, b: Period) =>
-  Math.max(0, daysBetween(a.from > b.from ? a.from : b.from, a.to < b.to ? a.to : b.to));
+export const sharedDays = (first: Period, second: Period) =>
+  Math.max(0, daysBetween(first.from > second.from ? first.from : second.from, first.to < second.to ? first.to : second.to));

@@ -7,6 +7,6 @@ export const skillRoutes: Route[] = [
     method: 'GET',
     path: '/v1/skills',
     permission: 'skills:read',
-    handler: async (c) => c.json<Skill[]>(await listSkills(c.var.tenant)),
+    handler: async (context) => context.json<Skill[]>(await listSkills(context.var.tenant)),
   },
 ];

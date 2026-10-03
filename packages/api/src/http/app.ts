@@ -34,7 +34,7 @@ const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRou
 /** Thrown inside the request's transaction to roll it back after the response has been decided. */
 const ROLL_BACK = Symbol('roll back');
 
-const render = (c: Context, error: DomainError) => c.json(error.toResponse(), error.status);
+const render = (context: Context, error: DomainError) => context.json(error.toResponse(), error.status);
 
 export function createApp({ db, token, extraRoutes = [], onUnexpectedError = console.error }: AppDependencies) {
   const app = new Hono<AppEnv>();
@@ -42,19 +42,19 @@ export function createApp({ db, token, extraRoutes = [], onUnexpectedError = con
   const permissions = new Map(routes.map((route) => [routeKey(route), route.permission]));
 
   // The one place an error becomes a response.
-  app.onError((error, c) => {
-    if (error instanceof DomainError) return render(c, error);
+  app.onError((error, context) => {
+    if (error instanceof DomainError) return render(context, error);
     // The database is the final arbiter of the booking rule (DESIGN.md section 3).
-    if (isBookingRuleViolation(error)) return render(c, crewAlreadyHeld());
+    if (isBookingRuleViolation(error)) return render(context, crewAlreadyHeld());
     onUnexpectedError(error);
-    return render(c, internal());
+    return render(context, internal());
   });
-  app.notFound((c) => render(c, notFound('That address')));
+  app.notFound((context) => render(context, notFound('That address')));
 
   // Public routes: no login, no tenant.
-  app.get('/v1/health', (c) => c.json<HealthResponse>({ status: 'ok' }));
-  app.post('/v1/auth/login', async (c) => {
-    return c.json(await login(db, await readBody(c, loginRequestSchema), token));
+  app.get('/v1/health', (context) => context.json<HealthResponse>({ status: 'ok' }));
+  app.post('/v1/auth/login', async (context) => {
+    return context.json(await login(db, await readBody(context, loginRequestSchema), token));
   });
 
   /**
@@ -63,16 +63,16 @@ export function createApp({ db, token, extraRoutes = [], onUnexpectedError = con
    * exists, and holds the permission the route declares. Any error, or any response of 400 or
    * above, rolls the transaction back.
    */
-  const requestPipeline: MiddlewareHandler<AppEnv> = async (c, next) => {
-    const [scheme, bearer] = (c.req.header('Authorization') ?? '').split(' ');
+  const requestPipeline: MiddlewareHandler<AppEnv> = async (context, next) => {
+    const [scheme, bearer] = (context.req.header('Authorization') ?? '').split(' ');
     if (scheme !== 'Bearer' || !bearer) throw unauthenticated();
     const claims = await verifyToken(bearer, token.secret);
     try {
       await withTenant(db, claims, async (tenant) => {
-        c.set('tenant', tenant);
-        c.set('actingAs', await describeActingUser(tenant));
+        context.set('tenant', tenant);
+        context.set('actingAs', await describeActingUser(tenant));
 
-        const handlerRoute = matchedRoutes(c).find((route) => route.handler !== requestPipeline);
+        const handlerRoute = matchedRoutes(context).find((route) => route.handler !== requestPipeline);
         if (handlerRoute) {
           const permission = permissions.get(routeKey(handlerRoute));
           if (!permission) throw new Error(`${routeKey(handlerRoute)} was registered without a permission`);
@@ -80,7 +80,7 @@ export function createApp({ db, token, extraRoutes = [], onUnexpectedError = con
         }
 
         await next();
-        if (c.error || c.res.status >= 400) throw ROLL_BACK;
+        if (context.error || context.res.status >= 400) throw ROLL_BACK;
       });
     } catch (error) {
       if (error !== ROLL_BACK) throw error;

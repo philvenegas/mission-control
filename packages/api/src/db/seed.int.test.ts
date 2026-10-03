@@ -85,7 +85,7 @@ describe('the seed', () => {
              (SELECT array_agg(DISTINCT a.status) FROM assignments a WHERE a.mission_id = m.id) AS assignment_statuses
       FROM missions m JOIN organisations o ON o.id = m.org_id JOIN users u ON u.id = m.owner_id
       WHERE o.slug = 'artemis' ORDER BY m.ref`;
-    expect(missions.map((m) => [m.ref, m.name, m.status, m.period, m.owner, m.assignment_statuses])).toEqual([
+    expect(missions.map((mission) => [mission.ref, mission.name, mission.status, mission.period, mission.owner, mission.assignment_statuses])).toEqual([
       [1, 'Lunar Gateway Resupply', 'active', '[2026-10-15,2027-02-10)', 'Sam Okafor', ['accepted']],
       [2, 'Mars Relay Repair', 'completed', '[2026-09-01,2026-09-25)', 'Priya Nair', ['accepted']],
       [3, 'Phobos Survey', 'submitted', '[2027-06-01,2027-06-30)', 'Priya Nair', ['held']],

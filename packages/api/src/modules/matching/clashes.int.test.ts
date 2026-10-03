@@ -17,10 +17,10 @@ const TAKE_HOLD: Route = {
   method: 'POST',
   path: '/v1/test/take-hold/:ref',
   permission: 'missions:read',
-  handler: async (c) => {
-    const { tx, orgId } = c.var.tenant;
-    await tx.execute(sql`UPDATE assignments SET status = ${'held' satisfies AssignmentStatus} WHERE org_id = ${orgId} AND ref = ${Number(c.req.param('ref'))}`);
-    return c.body(null, 204);
+  handler: async (context) => {
+    const { tx, orgId } = context.var.tenant;
+    await tx.execute(sql`UPDATE assignments SET status = ${'held' satisfies AssignmentStatus} WHERE org_id = ${orgId} AND ref = ${Number(context.req.param('ref'))}`);
+    return context.body(null, 204);
   },
 };
 

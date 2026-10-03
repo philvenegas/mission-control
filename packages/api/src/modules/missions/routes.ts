@@ -27,46 +27,46 @@ const recordRoutes: Route[] = [
     method: 'GET',
     path: '/v1/missions',
     permission: 'missions:read',
-    handler: async (c) => c.json<Mission[] | CrewMission[]>(await listMissionsFor(c.var.tenant)),
+    handler: async (context) => context.json<Mission[] | CrewMission[]>(await listMissionsFor(context.var.tenant)),
   },
   {
     method: 'POST',
     path: '/v1/missions',
     permission: 'missions:create',
-    handler: async (c) => c.json<Mission>(await createMission(c.var.tenant, await readBody(c, createMissionSchema)), 201),
+    handler: async (context) => context.json<Mission>(await createMission(context.var.tenant, await readBody(context, createMissionSchema)), 201),
   },
   {
     method: 'GET',
     path: '/v1/missions/:ref',
     permission: 'missions:read',
-    handler: async (c) => c.json<Mission | CrewMission>(await showMission(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<Mission | CrewMission>(await showMission(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'PATCH',
     path: '/v1/missions/:ref',
     permission: 'missions:edit',
-    handler: async (c) => c.json<Mission>(await changeMission(c.var.tenant, pathParam(c, 'ref'), await readBody(c, updateMissionSchema))),
+    handler: async (context) => context.json<Mission>(await changeMission(context.var.tenant, pathParam(context, 'ref'), await readBody(context, updateMissionSchema))),
   },
   {
     method: 'GET',
     path: '/v1/missions/:ref/events',
     permission: 'missions:history',
-    handler: async (c) => c.json<MissionEvent[]>(await missionHistory(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<MissionEvent[]>(await missionHistory(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'PUT',
     path: '/v1/missions/:ref/requirements/:skill',
     permission: 'missions:edit',
-    handler: async (c) =>
-      c.json<Mission>(
-        await setRequirement(c.var.tenant, pathParam(c, 'ref'), pathParam(c, 'skill'), await readBody(c, setRequirementSchema)),
+    handler: async (context) =>
+      context.json<Mission>(
+        await setRequirement(context.var.tenant, pathParam(context, 'ref'), pathParam(context, 'skill'), await readBody(context, setRequirementSchema)),
       ),
   },
   {
     method: 'DELETE',
     path: '/v1/missions/:ref/requirements/:skill',
     permission: 'missions:edit',
-    handler: async (c) => c.json<Mission>(await removeRequirement(c.var.tenant, pathParam(c, 'ref'), pathParam(c, 'skill'))),
+    handler: async (context) => context.json<Mission>(await removeRequirement(context.var.tenant, pathParam(context, 'ref'), pathParam(context, 'skill'))),
   },
 ];
 
@@ -74,9 +74,9 @@ const transitionRoutes: Route[] = BUILT_TRANSITIONS.map((transition) => ({
   method: 'POST',
   path: `/v1/missions/:ref/${transition}`,
   permission: routePermission(transition),
-  handler: async (c) => {
-    const { note } = await readBody(c, needsNote(transition) ? noteRequiredSchema : noteOptionalSchema);
-    return c.json<Mission>(await makeTransition(c.var.tenant, pathParam(c, 'ref'), transition, note ?? null));
+  handler: async (context) => {
+    const { note } = await readBody(context, needsNote(transition) ? noteRequiredSchema : noteOptionalSchema);
+    return context.json<Mission>(await makeTransition(context.var.tenant, pathParam(context, 'ref'), transition, note ?? null));
   },
 }));
 

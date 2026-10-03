@@ -89,6 +89,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - The walk-through test checks the outcomes through `--json` too: the match run choosing Ada as pilot and Quin as medic, the crew held, offered and declined, Mina replacing Quin, the clashing draft refused and then submitted with Ben, and Helios Labs listing only its own missions.
 - `transcripts/`, with a README saying what the AI transcripts are and how they are copied in unedited.
 - Row-level security on all twelve tables: one policy each, `tenant_isolation`, lets a row be read or written only while `app.org_id` names its organisation, so the database refuses another organisation's rows even when a query forgets to filter by `org_id`. It is enabled and forced, so owning a table is no way past it; only a role created with `BYPASSRLS` is. Login still finds a user through its one privileged function.
+- `db/setup.int.test.ts`: bootstrap creates both roles with the right attributes and a database the owner owns, is safe to run again, and restores an owner's lost bypass; migrating refuses without it. It uses roles and a database of its own, so coverage now measures `bootstrap.ts`.
 - `db/row-level-security.int.test.ts`: every table has the policy, enabled and forced; a direct query as the API role sees only the organisation set, and nothing with none set, in every table; it cannot add, change or delete another organisation's rows; the owner is not a superuser but bypasses the policies.
 
 ### Fixed
@@ -101,9 +102,13 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 
 ### Changed
 
-- Coverage thresholds rise to the level now reached: statements and lines 98%, branches 98.5%.
+- Coverage thresholds rise to the level now reached: statements and lines 99%, functions 99.5%, branches 98.5%.
 - `pnpm demo:setup` ends by naming the next step, `pnpm api`, then the README's walk-through.
 - The owner database role is now created, or altered on the next `pnpm demo:setup`, with `BYPASSRLS`, so the seed, test fixtures and the login lookup keep seeing every organisation under forced policies.
+- Migrating refuses, before changing anything, when the owner role cannot bypass row-level security, and names `pnpm demo:setup`, which bootstraps the roles first. Without the check, the seed would fail and login would find no one.
+- ESLint's `id-length` rule refuses single-letter names, which `CODING_STANDARDS.md` already forbade: Hono contexts are now `context`, Drizzle table callbacks' arguments `table`, and comparators' arguments `first` and `second`.
+- `CODING_STANDARDS.md` states the row-level security rules: every table's forced policy, and test queries as the API role inside `asOrganisation`.
+- `.claude/settings.json` turns colour off for coding agents (`FORCE_COLOR=0`, `NO_COLOR=1`), so test output reaches them without escape codes.
 - Two tests of the API role's privileges now set an organisation first, as every request does: with row-level security, the role sees and writes nothing without one.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

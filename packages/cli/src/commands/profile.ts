@@ -9,7 +9,7 @@ export function profileList(context: Context): number {
   const config = loadConfig(context);
   const acting = actingProfile(context, config)?.profile;
   if (acting) printActingAs(context, acting);
-  const entries = Object.entries(config.profiles).sort(([a], [b]) => (a < b ? -1 : 1));
+  const entries = Object.entries(config.profiles).sort(([first], [second]) => (first < second ? -1 : 1));
   const style = paint(context.io.stdout, context.io.env);
   const width = Math.max(0, ...entries.map(([name]) => name.length));
   printAnswer(

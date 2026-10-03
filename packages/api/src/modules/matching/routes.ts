@@ -8,18 +8,18 @@ export const matchingRoutes: Route[] = [
     method: 'POST',
     path: '/v1/missions/:ref/match',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<MatchRun>(await runMatcher(c.var.tenant, pathParam(c, 'ref')), 201),
+    handler: async (context) => context.json<MatchRun>(await runMatcher(context.var.tenant, pathParam(context, 'ref')), 201),
   },
   {
     method: 'GET',
     path: '/v1/match-runs/:ref',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<MatchRun>(await showMatchRun(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<MatchRun>(await showMatchRun(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'POST',
     path: '/v1/match-runs/:ref/apply',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<Mission>(await applyMatchRun(c.var.tenant, pathParam(c, 'ref'), await readBody(c, applyMatchRunSchema))),
+    handler: async (context) => context.json<Mission>(await applyMatchRun(context.var.tenant, pathParam(context, 'ref'), await readBody(context, applyMatchRunSchema))),
   },
 ];

@@ -16,7 +16,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js`, `knip`
 ## Names
 
 - **Use the glossary's term, in full** *(checked: `glossary.test.ts`)*. `crewMember`, not `member`; `missionLeads`, not `leads`. The `_Avoid_` lists in `CONTEXT.md` apply to variables, test names, SQL aliases and comments, not only to prose. A word avoided in one sense but right in another (`filter`, `role`) goes on the test's list of ambiguous words, with the reason; a word meant in only a few files (the demo profile `lead`) is listed against those files instead. A review checks each reason. `pnpm lint` runs this test, so a slip shows at the first lint, not the last test run.
-- **A name says what the value holds.** No `t`, `n`, `m`; no reusing one name for two things in a function. A list is named for what is in it (`betweenTenantTables`, not `single`).
+- **A name says what the value holds.** No single letters *(checked: `id-length`)*: a Hono context is `context`, a Drizzle table callback's argument is `table`, a comparator's are `first` and `second`. No reusing one name for two things in a function. A list is named for what is in it (`betweenTenantTables`, not `single`).
 - **Where the design fixes a name, keep it,** even against the glossary (`no_double_booking`).
 
 ## Domain values live in the contract
@@ -31,6 +31,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js`, `knip`
 - **Every tenant table has `org_id`, and every foreign key between tenant tables starts with `org_id`.**
 - **Every column with a fixed set of values has a check constraint,** generated from the contract.
 - **A copied column is tied to its source.** If a value is duplicated for a constraint's sake, a foreign key keeps the copy equal.
+- **Every table has the `tenant_isolation` row-level security policy, forced** *(checked: `row-level-security.int.test.ts`)*. In `schema.ts` that is `tenantPolicy(...)`; forcing it is a line in a custom migration, since drizzle-kit cannot. The owner sees past it only through `BYPASSRLS`, which bootstrap grants, and migrating refuses without it.
 - **Grant the API role the minimum.** It owns no table. Append-only tables (`mission_events`, `mission_approvals`) are insert and read only. A new table states its grants deliberately.
 - **Change the schema in `schema.ts`, then generate the migration.** CI fails if the two differ. Hand-written SQL goes in a custom migration with a comment saying why.
 - **Migrations already on `main` are never rewritten;** add a new one.
@@ -57,6 +58,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js`, `knip`
 - **Every branch that can throw has a test,** including guards in scripts. The guard in front of raw SQL was the review's most serious finding precisely because it was untested. `pnpm test:coverage` lists every file's uncovered lines; a review checks each one the diff touches. CI fails if coverage falls below the thresholds in `vitest.config.ts`, which only ever rise.
 - **Write the test first** where the behaviour is known, and name it as behaviour: `refuses a second live assignment that overlaps, whatever the application does`.
 - **Arrange what the API cannot yet create through `test/arrange.ts`:** a mission already in a status, crew already in its slots. It takes references from the organisation's counters, as the API does. A test that hand-writes the same SQL instead is duplicated setup.
+- **Query as the API role inside `asOrganisation`** (`test/database.ts`), which sets `app.org_id` as a request does. Without it, row-level security shows and accepts nothing.
 - **Test through the real thing.** Database rules are tested against Postgres, not mocked. Unit tests (`*.test.ts`) need no database; integration tests (`*.int.test.ts`) use the test database.
 - **Assert the outcome a person would check:** calendar dates, references, names. Not row counts alone.
 - **No magic numbers.** Derive the expectation from the source (the list of tables from the schema), so the test stays true when the source grows.

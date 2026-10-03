@@ -2,6 +2,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { requireEnv } from '../env.ts';
 import { connect, parseDatabaseUrl } from './connection.ts';
+import { exactlyOne } from './rows.ts';
 
 const migrationsFolder = fileURLToPath(new URL('./migrations', import.meta.url));
 
@@ -17,6 +18,18 @@ export async function migrateDatabase(ownerUrl: string, apiUrl: string): Promise
   const api = parseDatabaseUrl(apiUrl);
   const { client, db } = connect(ownerUrl);
   try {
+    // Row-level security is forced, so it binds the owner unless the owner role bypasses it, which
+    // only bootstrap grants. Migrated without it, the seed fails and login quietly finds no one.
+    const owner = exactlyOne(
+      await client<{ name: string; bypasses: boolean }[]>`
+        SELECT rolname AS name, rolbypassrls AS bypasses FROM pg_roles WHERE rolname = current_user`,
+      'owner role',
+    );
+    if (!owner.bypasses) {
+      throw new Error(
+        `The owner role ${owner.name} cannot bypass row-level security, so the seed and login would see no organisation. Run \`pnpm demo:setup\`, which bootstraps the roles, then migrates.`,
+      );
+    }
     await migrate(db, { migrationsFolder });
     await client.unsafe(`
       GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${api.role};
