@@ -19,14 +19,14 @@ export async function bootstrapDatabase(adminUrl: string, ownerUrl: string, apiU
 
   const admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
   try {
-    for (const [role, rowLevelSecurity] of [
+    for (const [role, bypassAttribute] of [
       [owner, 'BYPASSRLS'],
       [api, 'NOBYPASSRLS'],
     ] as const) {
       const [roleExists] = await admin`SELECT 1 FROM pg_roles WHERE rolname = ${role.role}`;
       const password = role.password.replaceAll("'", "''");
       await admin.unsafe(
-        `${roleExists ? 'ALTER' : 'CREATE'} ROLE ${role.role} LOGIN NOSUPERUSER ${rowLevelSecurity} NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
+        `${roleExists ? 'ALTER' : 'CREATE'} ROLE ${role.role} LOGIN NOSUPERUSER ${bypassAttribute} NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
       );
       done.push(`${roleExists ? 'kept' : 'created'} role ${role.role}`);
     }

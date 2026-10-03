@@ -4,6 +4,7 @@ import { PgTable } from 'drizzle-orm/pg-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { requireEnv } from '../env.ts';
 import {
+  asOrganisation,
   CHECK_VIOLATION,
   connectAsApi,
   connectAsOwner,
@@ -212,10 +213,7 @@ describe('the API database role', () => {
 
   it('can read and write rows but cannot change or wipe tables', async () => {
     const artemis = await orgId('artemis');
-    const seen = await api.client.begin(async (tx) => {
-      await tx`SELECT set_config('app.org_id', ${artemis}, true)`;
-      return tx`SELECT id FROM organisations`;
-    });
+    const seen = await asOrganisation(api.client, artemis, (tx) => tx`SELECT id FROM organisations`);
     expect(seen.map((row) => row.id)).toEqual([artemis]);
     expect(await errorCode(api.client`UPDATE skills SET category = category`)).toBeNull();
     expect(await errorCode(api.client`TRUNCATE skills`)).toBe(INSUFFICIENT_PRIVILEGE);
@@ -226,10 +224,11 @@ describe('the API database role', () => {
     const mission = await onlyRow(sql`SELECT id, org_id, owner_id FROM missions WHERE name = 'Phobos Survey'`, 'mission');
     expect(
       await errorCode(
-        api.client.begin(async (tx) => {
-          await tx`SELECT set_config('app.org_id', ${mission.org_id}, true)`;
-          await tx`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${mission.org_id}, ${mission.id}, ${mission.owner_id}, 'clash')`;
-        }),
+        asOrganisation(
+          api.client,
+          mission.org_id,
+          (tx) => tx`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${mission.org_id}, ${mission.id}, ${mission.owner_id}, 'clash')`,
+        ),
       ),
     ).toBeNull();
     for (const table of ['mission_events', 'mission_approvals']) {

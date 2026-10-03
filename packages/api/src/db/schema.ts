@@ -58,7 +58,8 @@ const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull(
  * Row-level security: a row can be read or written only while `app.org_id`, which each request sets
  * for its own transaction, names the row's organisation. With no setting, or the empty one a
  * connection keeps after such a transaction, nothing matches. The owner bypasses it, for the seed
- * and the login lookup; the API role cannot.
+ * and the login lookup; the API role cannot. A new table also needs a line forcing it, in a custom
+ * migration like `0004_force_row_level_security.sql`; `row-level-security.int.test.ts` fails until it has one.
  */
 const tenantPolicy = (organisation: Column) => {
   const ownOrganisation = sql`${organisation} = nullif(current_setting('app.org_id', true), '')::uuid`;
@@ -80,7 +81,7 @@ export const organisations = pgTable('organisations', {
   lastMatchRunRef: integer('last_match_run_ref').notNull().default(0),
   lastAvailabilityBlockRef: integer('last_availability_block_ref').notNull().default(0),
   createdAt: createdAt(),
-}, (t) => [tenantPolicy(t.id)]);
+}, (table) => [tenantPolicy(table.id)]);
 
 export const users = pgTable(
   'users',

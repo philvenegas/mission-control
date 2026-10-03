@@ -4,7 +4,7 @@ import type { Sql, TransactionSql } from 'postgres';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { requireEnv } from '../env.ts';
 import { loginAs, useSeededApp } from '../test/app.ts';
-import { errorCode, INSUFFICIENT_PRIVILEGE, onlyRow } from '../test/database.ts';
+import { asOrganisation, errorCode, INSUFFICIENT_PRIVILEGE, onlyRow } from '../test/database.ts';
 import { parseDatabaseUrl } from './connection.ts';
 import * as schema from './schema.ts';
 
@@ -21,8 +21,13 @@ beforeAll(async () => {
   expect(made.map((response) => response.ok)).toEqual([true, true, true]);
 });
 
-/** Every table, with the column that says which organisation a row belongs to. */
-const tables = Object.values(schema)
+/** A table, with the column that says which organisation a row belongs to: `id` for organisations themselves. */
+interface TenantTable {
+  name: string;
+  orgColumn: string;
+}
+
+const tables: TenantTable[] = Object.values(schema)
   .filter((value) => is(value, PgTable))
   .map((table) => {
     const columns = getTableConfig(table).columns.map((column) => column.name);
@@ -33,15 +38,11 @@ const orgId = async (slug: string) =>
   (await onlyRow(owner<{ id: string }[]>`SELECT id FROM organisations WHERE slug = ${slug}`, 'organisation')).id;
 
 /** The organisations whose rows a query on `table` returns. */
-const orgsSeenIn = async (sql: Sql | TransactionSql, table: { name: string; orgColumn: string }) =>
+const orgsSeenIn = async (sql: Sql | TransactionSql, table: TenantTable) =>
   (await sql<{ org: string }[]>`SELECT DISTINCT ${sql(table.orgColumn)} AS org FROM ${sql(table.name)}`).map((row) => row.org);
 
-/** Runs `work` as the API role, in one transaction with `app.org_id` set, as a request does. */
-const asTenant = <T>(org: string, work: (sql: TransactionSql) => Promise<T>) =>
-  api.client.begin(async (sql) => {
-    await sql`SELECT set_config('app.org_id', ${org}, true)`;
-    return work(sql);
-  });
+/** Runs `work` as the API role, with `org` set, as a request does. */
+const asTenant = <T>(org: string, work: (sql: TransactionSql) => Promise<T>) => asOrganisation(api.client, org, work);
 
 describe('every table', () => {
   it('has row-level security enabled and forced, under one policy for every role', async () => {

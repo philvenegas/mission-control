@@ -1,3 +1,4 @@
+import type { TransactionSql } from 'postgres';
 import { connect } from '../db/connection.ts';
 import { exactlyOne } from '../db/rows.ts';
 import { requireEnv } from '../env.ts';
@@ -8,6 +9,16 @@ export const connectAsOwner = () => connect(requireEnv('TEST_DATABASE_OWNER_URL'
 
 /** The test database as the API's role. */
 export const connectAsApi = () => connect(requireEnv('TEST_DATABASE_URL'));
+
+/**
+ * Runs `work` in one transaction on `client` with `app.org_id` set, as a request's transaction is.
+ * Row-level security shows and accepts only that organisation's rows.
+ */
+export const asOrganisation = <T>(client: ReturnType<typeof connectAsApi>['client'], orgId: string, work: (sql: TransactionSql) => Promise<T>) =>
+  client.begin(async (sql) => {
+    await sql`SELECT set_config('app.org_id', ${orgId}, true)`;
+    return work(sql);
+  });
 
 /** The one row a query returns. The test fails, naming `what`, if it returns none or several. */
 export const onlyRow = async <Row>(query: PromiseLike<readonly Row[]>, what: string): Promise<Row> =>
