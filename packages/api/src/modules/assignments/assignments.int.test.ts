@@ -69,6 +69,7 @@ describe('assigning crew by hand', () => {
         match_run: null,
         assigned_by: SAM,
         decline_reason: null,
+        problems: [],
       },
     ]);
   });

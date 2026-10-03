@@ -71,8 +71,8 @@ beforeAll(async () => {
   ]);
   callers = { director, owner: missionOwner, 'other mission lead': otherMissionLead, 'crew member': crewMember };
   // One mission per case, owned by Sam, each on its own day of 2030. Each meets every guard: a
-  // requirement, a future start, and on an approved mission its slot accepted (by Ben, CRW-2), so
-  // only the status and the role decide the answer.
+  // requirement, a future start, and its slot filled by Ben (CRW-2), proposed on a draft and
+  // accepted on an approved mission, so only the status and the role decide the answer.
   for (const [index, { status }] of CASES.entries()) {
     missionRefs[index] = await arrangeMission(owner, {
       org: 'artemis',
@@ -81,7 +81,7 @@ beforeAll(async () => {
       status,
       owner: 'sam@artemis.example',
       skill: 'pilot',
-      crew: status === 'approved' ? [{ crewMember: 'CRW-2', status: 'accepted' }] : [],
+      crew: status === 'draft' || status === 'approved' ? [{ crewMember: 'CRW-2', status: status === 'draft' ? 'proposed' : 'accepted' }] : [],
     });
   }
 });

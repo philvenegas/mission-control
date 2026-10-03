@@ -105,7 +105,7 @@ export async function applyMatchRun(context: TenantContext, runRef: string, { al
     if (assessment.clashes.length > 0) {
       clashes.push(`${nameCrewMember(crewMember)}, who is also proposed on ${assessment.clashes.map(nameMission).join(' and ')}`);
     }
-    return [{ requirementId: requirement.id, crewMemberId: candidate.id, score: score.total }];
+    return [{ requirementId: requirement.id, crewMember: candidate, score: score.total, clashes: assessment.clashes }];
   });
 
   if (problems.length > 0) {

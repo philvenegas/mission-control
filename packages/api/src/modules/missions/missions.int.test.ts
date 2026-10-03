@@ -60,8 +60,8 @@ describe('reading missions', () => {
           headcount: 2,
           // Held for Phobos Survey while it awaits approval. The seed placed them, not a match run.
           crew: [
-            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-3', name: 'Mina Farouk' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null },
-            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-7', name: 'Quin Abara' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null },
+            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-3', name: 'Mina Farouk' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null, problems: [] },
+            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-7', name: 'Quin Abara' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null, problems: [] },
           ],
         },
       ],
@@ -218,10 +218,14 @@ async function crewStatuses(slug: string, ref: number) {
   return Object.fromEntries(rows.map((row) => [row.name, row.status]));
 }
 
-/** A new draft with one requirement, ready to submit. */
-async function readyDraft(caller: Caller, skill: string, period = { from: '2028-03-01', to: '2028-03-10' }) {
+/**
+ * A new draft with one requirement, ready to submit: its slot filled by the crew member given, or
+ * left open for an organisation that allows it, or for a guard that refuses the mission first.
+ */
+async function readyDraft(caller: Caller, skill: string, period = { from: '2028-03-01', to: '2028-03-10' }, crewMember?: string) {
   const { ref } = await mission(await caller.post('/v1/missions', { name: `Draft ${skill}`, ...period }));
   await caller.put(`/v1/missions/${ref}/requirements/${encodeURIComponent(skill)}`, { min_level: 1 });
+  if (crewMember) await caller.post(`/v1/missions/${ref}/assignments`, { crew_member: crewMember, skill });
   return ref;
 }
 
@@ -229,7 +233,12 @@ const history = async (caller: Caller, ref: string) => bodyOf(await caller.get(`
 
 describe('submitting a mission', () => {
   it('submits a draft, holding its proposed crew, and records who did it', async () => {
-    // Ceres Resupply proposes Ada and Noor.
+    // Ceres Resupply proposes Ada and Noor, and Vesta Mapping proposes Ada too: a clash, until a
+    // director releases her from Vesta Mapping.
+    expect(await error(await sam.post('/v1/missions/MSN-4/submit', {}))).toMatchObject({ status: 409, code: 'GUARD_FAILED' });
+    const vesta = await mission(await dana.get('/v1/missions/MSN-5'));
+    const adaOnVesta = vesta.requirements.flatMap(({ crew }) => crew).find(({ crew_member }) => crew_member.ref === 'CRW-1');
+    await dana.delete(`/v1/assignments/${adaOnVesta?.assignment}`);
     const submitted = await mission(await sam.post('/v1/missions/MSN-4/submit', {}));
     expect(submitted).toMatchObject({ status: 'submitted', submitted_by: SAM, approval: { required: 1, approved_by: [] } });
     expect(await crewStatuses('artemis', 4)).toEqual({ 'Ada Reyes': 'held', 'Noor Haddad': 'held' });
@@ -306,7 +315,8 @@ describe('approving and rejecting', () => {
   });
 
   it('never lets the submitter approve or reject, director or not', async () => {
-    const ref = await readyDraft(dana, 'navigator');
+    // Sven Dahl is a navigator.
+    const ref = await readyDraft(dana, 'navigator', undefined, 'CRW-11');
     await dana.post(`/v1/missions/${ref}/submit`, {});
     expect(await error(await dana.post(`/v1/missions/${ref}/approve`, {}))).toEqual({
       status: 403,

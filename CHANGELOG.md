@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 5 are done, and the first half of step 6. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 6 are done. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
@@ -66,6 +66,11 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `assessCandidate` in the matcher: one crew member weighed for one slot, shared by the matcher, hand assignment and applying a run.
 - A test runs the matcher over the seed and checks the outcomes the design names: Titan Relay's unfilled geologist slot with its reasons, Ben and Ada on Io Flyby, and Ada, Quin and then Mina on Europa Survey.
 - The isolation sweep covers the new routes, calling the crew-only ones as a crew member of each organisation.
+- The proposal check: every mission read shows each proposed crew member's problems, as data, worked out from the data as it is: a clash with another draft, naming it and its owner, or a hard constraint they now fail. A proposal that makes a clash writes a `clash` event into the other mission's history.
+- Submit is refused, listing every problem, while any proposal has one, and while a slot is open unless the organisation allows unfilled submission.
+- An availability block over a held, offered or accepted assignment is refused (`CREW_HELD`), naming the mission only for offered and accepted ones; one over a proposal is accepted, and the draft shows the problem.
+- A second hold on a crew member over an overlapping period, refused by the database's booking rule, answers 409 (`CREW_HELD`).
+- Integration tests for all seventeen clash scenarios of `DESIGN.md` section 10, numbered to match, and for two requests taking a hold at the same moment.
 
 ### Fixed
 

@@ -9,6 +9,9 @@ import {
 import { can, type Permission, reaches } from '../../auth/policy.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden } from '../../errors.ts';
+import { listMissionCrew } from '../assignments/repository.ts';
+import { currentRequirements } from '../matching/candidates.ts';
+import { checkProposals, describeProblems } from '../matching/proposals.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { approvalState } from './approval.ts';
 import {
@@ -95,6 +98,20 @@ async function submitGuard({ context, mission }: TransitionRun) {
     throw guardFailed(
       `${name} requires ${plural(settings.approvals_required, 'approval')}, but only ${plural(directors, 'director')} other than you can approve.`,
     );
+  }
+  // Submitted means sound: every proposal passes the proposal check.
+  const [requirements, missionCrew] = await Promise.all([listRequirements(context, [mission.id]), listMissionCrew(context, [mission.id])]);
+  const problems = describeProblems(await checkProposals(context, { missions: [mission], requirements, missionCrew, weights: settings.match_weights }));
+  if (problems.length > 0) {
+    throw guardFailed(
+      `${missionRef(mission)} cannot be submitted: ${problems.join('; ')}.`,
+      'Each problem must be resolved first: release the crew member, or change what blocks them.',
+    );
+  }
+  const unfilled = (await currentRequirements(context, mission)).filter(({ filled, headcount }) => filled < headcount);
+  if (unfilled.length > 0 && !settings.allow_unfilled_submission) {
+    const fillCounts = unfilled.map(({ skill, filled, headcount }) => `${skill} has ${filled} of ${headcount} slots filled`).join('; ');
+    throw guardFailed(`${missionRef(mission)} cannot be submitted: ${fillCounts}.`, `${name} does not allow a mission to be submitted with open slots.`);
   }
 }
 

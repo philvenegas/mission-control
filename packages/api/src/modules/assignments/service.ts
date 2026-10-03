@@ -3,11 +3,12 @@ import {
   type AssignmentStatus,
   CREW_VISIBLE_ASSIGNMENT_STATUSES,
   type CrewAssignment,
+  type CrewMemberSummary,
   formatRef,
   type Mission,
   PLACED_ASSIGNMENT_STATUSES,
 } from '@mission-control/contract';
-import { assessCandidate } from '@mission-control/matcher';
+import { assessCandidate, type MissionSummary } from '@mission-control/matcher';
 import { reaches } from '../../auth/policy.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import { exactlyOne } from '../../db/rows.ts';
@@ -16,7 +17,7 @@ import { DomainError, notFound } from '../../errors.ts';
 import { resolveCrewMember } from '../crew/service.ts';
 import { crewInputs, currentRequirements, matchedMission } from '../matching/candidates.ts';
 import { nameCrewMember, reasonsFor } from '../matching/reasons.ts';
-import { getMissionByRef, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
+import { getMissionByRef, insertEvent, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
 import { describeMission, lockMissionForCrewChange, resolveMissionForCrewChange } from '../missions/service.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
@@ -25,17 +26,43 @@ import { findAssignmentByRef, insertAssignment, moveAssignment } from './reposit
 /** A crew member placed on a draft is proposed; one placed on an approved mission, refilling a slot, is offered. */
 const placedStatus = (mission: MissionRow): AssignmentStatus => (mission.status === 'draft' ? 'proposed' : 'offered');
 
+/** A crew member about to be placed in a slot: the slot, the run that chose them or none, and whom they clash with. */
+interface NewAssignment {
+  requirementId: string;
+  crewMember: CrewMemberSummary & { id: string };
+  score: number;
+  matchRunId: string | null;
+  /** Other drafts over the same period that propose the crew member too. */
+  clashes: MissionSummary[];
+}
+
 /**
  * Puts a crew member in one of a mission's slots, from a match run or by hand. The caller holds the
- * mission's row lock, and its status lets its crew change.
+ * mission's row lock, and its status lets its crew change. A proposal that makes a clash is written
+ * into the other mission's history, naming this mission; the event's actor is who made it.
  */
-export async function placeCrewMember(
-  context: TenantContext,
-  mission: MissionRow,
-  assignment: { requirementId: string; crewMemberId: string; score: number; matchRunId: string | null },
-) {
+export async function placeCrewMember(context: TenantContext, mission: MissionRow, newAssignment: NewAssignment) {
   const ref = await takeNextRef(context, 'assignment');
-  await insertAssignment(context, { ref, missionId: mission.id, period: mission.period, status: placedStatus(mission), ...assignment });
+  await insertAssignment(context, {
+    ref,
+    missionId: mission.id,
+    requirementId: newAssignment.requirementId,
+    crewMemberId: newAssignment.crewMember.id,
+    period: mission.period,
+    status: placedStatus(mission),
+    score: newAssignment.score,
+    matchRunId: newAssignment.matchRunId,
+  });
+  for (const other of newAssignment.clashes) {
+    const { id } = await getMissionByRef(context, refNumber('mission', other.ref));
+    await insertEvent(context, {
+      missionId: id,
+      type: 'clash',
+      fromStatus: null,
+      toStatus: null,
+      note: `${nameCrewMember(newAssignment.crewMember)} is now also proposed on ${formatRef('mission', mission.ref)} ${mission.name}.`,
+    });
+  }
 }
 
 /**
@@ -59,7 +86,7 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
 
   const candidate = exactlyOne(await crewInputs(context, [crewMember]), 'crew member');
   const { settings } = await getOrganisation(context);
-  const { failures, score } = assessCandidate({ crew: candidate, need: requirement, mission: matchedMission(mission) }, settings.match_weights);
+  const { failures, clashes, score } = assessCandidate({ crew: candidate, need: requirement, mission: matchedMission(mission) }, settings.match_weights);
   // A score is given exactly when no hard constraint fails.
   if (score === null) {
     throw new DomainError(
@@ -68,7 +95,7 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
       'Nobody can assign against a hard constraint. Change the record that blocks it instead.',
     );
   }
-  await placeCrewMember(context, mission, { requirementId: requirement.id, crewMemberId: candidate.id, score: score.total, matchRunId: null });
+  await placeCrewMember(context, mission, { requirementId: requirement.id, crewMember: candidate, score: score.total, matchRunId: null, clashes });
   return describeMission(context, mission);
 }
 

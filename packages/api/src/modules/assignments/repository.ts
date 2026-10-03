@@ -17,6 +17,7 @@ export function listMissionCrew({ tx, orgId }: TenantContext, missionIds: string
       missionId: assignments.missionId,
       requirementId: assignments.requirementId,
       ref: assignments.ref,
+      crewMemberId: assignments.crewMemberId,
       crewMember: { ref: crewMembers.ref, name: crewMembers.name },
       status: assignments.status,
       score: assignments.score,

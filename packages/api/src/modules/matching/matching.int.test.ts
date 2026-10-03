@@ -117,6 +117,7 @@ describe('applying a match run', () => {
         match_run: run.ref,
         assigned_by: SAM,
         decline_reason: null,
+        problems: [],
       },
     ]);
     expect((await matchRun(await sam.get(`/v1/match-runs/${run.ref}`))).applied_at).not.toBeNull();
@@ -225,6 +226,8 @@ describe('applying a match run', () => {
   it('refuses once the mission can no longer change its crew', async () => {
     const draft = await arrangeFor('draft', 'pilot', 4);
     const run = await matchRun(await sam.post(`/v1/missions/${draft}/match`));
+    // Filled by hand, so the draft can be submitted.
+    await sam.post(`/v1/missions/${draft}/assignments`, { crew_member: 'CRW-2', skill: 'pilot' });
     expect((await sam.post(`/v1/missions/${draft}/submit`, {})).status).toBe(200);
     expect(await error(await sam.post(`/v1/match-runs/${run.ref}/apply`, {}))).toMatchObject({ status: 409, code: 'NOT_STAFFABLE' });
   });

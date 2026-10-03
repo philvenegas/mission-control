@@ -35,4 +35,25 @@ export const forbidden = (message: string) => new DomainError('FORBIDDEN', messa
 /** For a record that does not exist and, identically, for one the caller may not see. */
 export const notFound = (what: string) => new DomainError('NOT_FOUND', `${what} was not found.`);
 
+/** The Postgres code for a violated exclusion constraint: the booking rule is the only one. */
+const EXCLUSION_VIOLATION = '23P01';
+
+/** Whether an error, or one it was caused by, is the database refusing a second hold over one period. */
+export function isBookingRuleViolation(error: unknown): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    if ('code' in current && current.code === EXCLUSION_VIOLATION) return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+/** The booking rule's refusal, when two requests take a hold on one crew member at the same moment. */
+export const crewAlreadyHeld = () =>
+  new DomainError(
+    'CREW_HELD',
+    'A crew member is already held for an overlapping period.',
+    'Someone else took the hold first. Read the mission again and choose another crew member.',
+  );
+
 export const internal = () => new DomainError('INTERNAL', 'Something went wrong on the server.');
