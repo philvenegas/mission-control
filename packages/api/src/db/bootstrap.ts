@@ -6,8 +6,10 @@ import { parseDatabaseUrl } from './connection.ts';
 /**
  * Creates the two database roles and a database, as the superuser. Safe to run again.
  *
- * - The owner owns the database and its tables, and runs migrations and the seed.
- * - The API role owns nothing and can bypass nothing, so row-level security can bind it.
+ * - The owner owns the database and its tables, and runs migrations and the seed. It bypasses
+ *   row-level security, which binds even owners because it is forced: the seed writes every
+ *   organisation, and the login lookup it owns finds a user before any organisation is known.
+ * - The API role owns nothing and can bypass nothing, so row-level security binds it.
  */
 export async function bootstrapDatabase(adminUrl: string, ownerUrl: string, apiUrl: string): Promise<string[]> {
   const owner = parseDatabaseUrl(ownerUrl);
@@ -17,11 +19,14 @@ export async function bootstrapDatabase(adminUrl: string, ownerUrl: string, apiU
 
   const admin = postgres(adminUrl, { max: 1, onnotice: () => {} });
   try {
-    for (const role of [owner, api]) {
+    for (const [role, bypassAttribute] of [
+      [owner, 'BYPASSRLS'],
+      [api, 'NOBYPASSRLS'],
+    ] as const) {
       const [roleExists] = await admin`SELECT 1 FROM pg_roles WHERE rolname = ${role.role}`;
       const password = role.password.replaceAll("'", "''");
       await admin.unsafe(
-        `${roleExists ? 'ALTER' : 'CREATE'} ROLE ${role.role} LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
+        `${roleExists ? 'ALTER' : 'CREATE'} ROLE ${role.role} LOGIN NOSUPERUSER ${bypassAttribute} NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
       );
       done.push(`${roleExists ? 'kept' : 'created'} role ${role.role}`);
     }

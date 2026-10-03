@@ -22,6 +22,20 @@
       "when": 1790935934844,
       "tag": "0002_login_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791022774163,
+      "tag": "0003_row_level_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791022777850,
+      "tag": "0004_force_row_level_security",
+      "breakpoints": true
     }
   ]
 }

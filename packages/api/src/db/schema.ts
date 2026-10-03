@@ -27,6 +27,7 @@ import {
   foreignKey,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   primaryKey,
   text,
@@ -53,6 +54,17 @@ const oneOf = (column: Column, values: readonly string[]) =>
   sql`${column} IN (${sql.raw(values.map((value) => `'${value}'`).join(', '))})`;
 const validLevel = (column: Column) => sql`${column} BETWEEN ${sql.raw(String(MIN_LEVEL))} AND ${sql.raw(String(MAX_LEVEL))}`;
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+/**
+ * Row-level security: a row can be read or written only while `app.org_id`, which each request sets
+ * for its own transaction, names the row's organisation. With no setting, or the empty one a
+ * connection keeps after such a transaction, nothing matches. The owner bypasses it, for the seed
+ * and the login lookup; the API role cannot. A new table also needs a line forcing it, in a custom
+ * migration like `0004_force_row_level_security.sql`; `row-level-security.int.test.ts` fails until it has one.
+ */
+const tenantPolicy = (organisation: Column) => {
+  const ownOrganisation = sql`${organisation} = nullif(current_setting('app.org_id', true), '')::uuid`;
+  return pgPolicy('tenant_isolation', { for: 'all', using: ownOrganisation, withCheck: ownOrganisation });
+};
 
 // Every tenant table has `org_id` and a unique `(org_id, id)`, and every foreign key between
 // tenant tables is composite on `(org_id, id)`: a row can never reference another organisation's row.
@@ -69,7 +81,7 @@ export const organisations = pgTable('organisations', {
   lastMatchRunRef: integer('last_match_run_ref').notNull().default(0),
   lastAvailabilityBlockRef: integer('last_availability_block_ref').notNull().default(0),
   createdAt: createdAt(),
-});
+}, (table) => [tenantPolicy(table.id)]);
 
 export const users = pgTable(
   'users',
@@ -86,6 +98,7 @@ export const users = pgTable(
     unique('users_org_id_id').on(t.orgId, t.id),
     unique('users_org_id_email').on(t.orgId, t.email),
     check('users_role', oneOf(t.role, ROLES)),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -105,6 +118,7 @@ export const crewMembers = pgTable(
     unique('crew_members_org_id_ref').on(t.orgId, t.ref),
     foreignKey({ name: 'crew_members_user_fk', columns: [t.orgId, t.userId], foreignColumns: [users.orgId, users.id] }),
     check('crew_members_status', oneOf(t.status, CREW_STATUSES)),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -116,7 +130,7 @@ export const skills = pgTable(
     name: text('name').notNull(),
     category: text('category').notNull(),
   },
-  (t) => [unique('skills_org_id_id').on(t.orgId, t.id), unique('skills_org_id_name').on(t.orgId, t.name)],
+  (t) => [unique('skills_org_id_id').on(t.orgId, t.id), unique('skills_org_id_name').on(t.orgId, t.name), tenantPolicy(t.orgId)],
 );
 
 export const crewSkills = pgTable(
@@ -137,6 +151,7 @@ export const crewSkills = pgTable(
     }),
     foreignKey({ name: 'crew_skills_skill_fk', columns: [t.orgId, t.skillId], foreignColumns: [skills.orgId, skills.id] }),
     check('crew_skills_level', validLevel(t.level)),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -160,6 +175,7 @@ export const availabilityBlocks = pgTable(
       foreignColumns: [crewMembers.orgId, crewMembers.id],
     }),
     check('availability_blocks_period', sql`NOT isempty(${t.period})`),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -191,6 +207,7 @@ export const missions = pgTable(
     unique('missions_org_id_id_period').on(t.orgId, t.id, t.period),
     check('missions_status', oneOf(t.status, MISSION_STATUSES)),
     check('missions_period', sql`NOT isempty(${t.period})`),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -222,6 +239,7 @@ export const missionRequirements = pgTable(
     }),
     check('mission_requirements_min_level', validLevel(t.minLevel)),
     check('mission_requirements_headcount', sql`${t.headcount} >= 1`),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -247,6 +265,7 @@ export const matchRuns = pgTable(
       foreignColumns: [missions.orgId, missions.id],
     }),
     foreignKey({ name: 'match_runs_created_by_fk', columns: [t.orgId, t.createdBy], foreignColumns: [users.orgId, users.id] }),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -296,6 +315,7 @@ export const assignments = pgTable(
     foreignKey({ name: 'assignments_created_by_fk', columns: [t.orgId, t.createdBy], foreignColumns: [users.orgId, users.id] }),
     check('assignments_status', oneOf(t.status, ASSIGNMENT_STATUSES)),
     // The booking rule, `no_double_booking`, is an exclusion constraint added by a hand-written migration.
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -325,6 +345,7 @@ export const missionApprovals = pgTable(
       foreignColumns: [users.orgId, users.id],
     }),
     check('mission_approvals_decision', oneOf(t.decision, APPROVAL_DECISIONS)),
+    tenantPolicy(t.orgId),
   ],
 );
 
@@ -350,5 +371,6 @@ export const missionEvents = pgTable(
     }),
     foreignKey({ name: 'mission_events_actor_fk', columns: [t.orgId, t.actorId], foreignColumns: [users.orgId, users.id] }),
     check('mission_events_type', oneOf(t.type, MISSION_EVENT_TYPES)),
+    tenantPolicy(t.orgId),
   ],
 );
