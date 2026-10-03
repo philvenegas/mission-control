@@ -1,10 +1,10 @@
-import { type AvailabilityBlock, type CreateAvailabilityBlock, formatRef, isLiveStatus, type Period } from '@mission-control/contract';
+import { type AvailabilityBlock, type CreateAvailabilityBlock, formatRef, isLiveStatus, type Period, periodsOverlap } from '@mission-control/contract';
 import { reaches } from '../../auth/policy.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, notFound } from '../../errors.ts';
 import { listAssignmentsOfCrew } from '../assignments/repository.ts';
-import type { CrewMemberRow } from '../crew/repository.ts';
+import { type CrewMemberRow, lockCrewMembers } from '../crew/repository.ts';
 import { resolveCrewMember } from '../crew/service.ts';
 import {
   type AvailabilityBlockRow,
@@ -31,7 +31,7 @@ const toAvailabilityBlock = (row: AvailabilityBlockRow): AvailabilityBlock => ({
  */
 async function refuseOverAHold(context: TenantContext, crewMember: CrewMemberRow, period: Period) {
   const holding = (await listAssignmentsOfCrew(context, [crewMember.id])).filter(
-    (assignment) => isLiveStatus(assignment.status) && assignment.period.from < period.to && period.from < assignment.period.to,
+    (assignment) => isLiveStatus(assignment.status) && periodsOverlap(assignment.period, period),
   );
   const who = `${crewMember.name} ${formatRef('crew_member', crewMember.ref)}`;
   const known = holding.find((assignment) => assignment.status !== 'held');
@@ -56,6 +56,7 @@ export async function addAvailabilityBlock(
   input: CreateAvailabilityBlock,
 ): Promise<AvailabilityBlock> {
   const crewMember = await resolveCrewMember(context, crewMemberRef, 'availability:manage');
+  await lockCrewMembers(context, [crewMember.id]);
   await refuseOverAHold(context, crewMember, { from: input.from, to: input.to });
   const ref = await takeNextRef(context, 'availability_block');
   await insertAvailabilityBlock(context, {

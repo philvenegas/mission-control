@@ -4,10 +4,10 @@ import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import type { MissionCrewRow } from '../assignments/repository.ts';
 import { listCrewMembers } from '../crew/repository.ts';
-import type { MissionRow } from '../missions/repository.ts';
-import { crewInputs, matchedMission } from './candidates.ts';
-import { describeFailure, nameCrewMember, nameMission } from './reasons.ts';
-import { toFailureResponse } from './result.ts';
+import { crewInputs, matchedMission } from '../matching/candidates.ts';
+import { describeFailure, nameCrewMember, nameMission } from '../matching/reasons.ts';
+import { toFailureResponse } from '../matching/result.ts';
+import type { MissionRow, RequirementRow } from './repository.ts';
 
 // The proposal check (DESIGN.md section 4): a proposed assignment is sound when its crew member
 // passes every hard constraint and has no clash. It is worked out whenever a mission is read, from
@@ -16,7 +16,7 @@ import { toFailureResponse } from './result.ts';
 /** What the check weighs: the missions, their requirements and crew, and the organisation's weights. */
 interface ProposalsToCheck {
   missions: MissionRow[];
-  requirements: { id: string; skill: string; minLevel: number }[];
+  requirements: RequirementRow[];
   missionCrew: MissionCrewRow[];
   weights: MatchWeights;
 }

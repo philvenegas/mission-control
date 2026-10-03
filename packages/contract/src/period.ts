@@ -10,3 +10,6 @@ export const PERIOD_ORDER = { message: 'A period must end after it starts.', pat
 /** A range of dates: `from` inclusive, `to` exclusive, so `to` is the day after the last day. */
 export const periodSchema = z.object({ from: isoDaySchema, to: isoDaySchema }).refine(endsAfterStart, PERIOD_ORDER);
 export type Period = z.infer<typeof periodSchema>;
+
+/** Whether two periods share at least one day. */
+export const periodsOverlap = (a: Period, b: Period) => a.from < b.to && b.from < a.to;

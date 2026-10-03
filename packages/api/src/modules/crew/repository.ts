@@ -1,5 +1,5 @@
 import type { CrewStatus } from '@mission-control/contract';
-import { and, asc, eq, inArray, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { crewMembers, crewSkills, skills, users } from '../../db/schema.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 
@@ -31,6 +31,18 @@ function selectCrewMembers({ tx, orgId }: TenantContext, condition?: SQL) {
 /** Every crew member of the organisation, or only the one linked to `userId`. */
 export function listCrewMembers(context: TenantContext, onlyUserId?: string): Promise<CrewMemberRow[]> {
   return selectCrewMembers(context, onlyUserId === undefined ? undefined : eq(crewMembers.userId, onlyUserId));
+}
+
+/**
+ * Locks crew members' rows until the request's transaction ends, so a change to what a crew member
+ * can do (a skill, their status, an availability block) and a decision that rests on it (placing
+ * them in a slot, submitting a mission that proposes them) run one after the other. Rows are taken
+ * in id order, so two requests locking several never wait on each other in a circle.
+ */
+export async function lockCrewMembers({ tx, orgId }: TenantContext, ids: string[]): Promise<void> {
+  await tx.execute(
+    sql`SELECT 1 FROM ${crewMembers} WHERE ${crewMembers.orgId} = ${orgId} AND ${inArray(crewMembers.id, ids)} ORDER BY ${crewMembers.id} FOR UPDATE`,
+  );
 }
 
 export async function findCrewMemberByRef(context: TenantContext, ref: number): Promise<CrewMemberRow | undefined> {

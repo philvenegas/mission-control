@@ -13,7 +13,7 @@ import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, notFound } from '../../errors.ts';
 import { placeCrewMember } from '../assignments/service.ts';
-import { listCrewMembers } from '../crew/repository.ts';
+import { listCrewMembers, lockCrewMembers } from '../crew/repository.ts';
 import { getMissionByRef } from '../missions/repository.ts';
 import { describeMission, lockMissionForCrewChange, resolveMissionForCrewChange } from '../missions/service.ts';
 import { getOrganisation } from '../org/repository.ts';
@@ -83,7 +83,9 @@ export async function applyMatchRun(context: TenantContext, runRef: string, { al
   const requirements = await currentRequirements(context, mission);
   const chosen = matchRunResultSchema.parse(run.result).slots.flatMap(({ slot, chosen }) => (chosen ? [{ skill: slot.skill, ...chosen }] : []));
   const chosenRefs = new Set(chosen.map(({ crew_member: crewMember }) => crewMember.ref));
-  const crew = await crewInputs(context, (await listCrewMembers(context)).filter((row) => chosenRefs.has(formatRef('crew_member', row.ref))));
+  const chosenRows = (await listCrewMembers(context)).filter((row) => chosenRefs.has(formatRef('crew_member', row.ref)));
+  await lockCrewMembers(context, chosenRows.map(({ id }) => id));
+  const crew = await crewInputs(context, chosenRows);
   const { settings } = await getOrganisation(context);
 
   const problems: string[] = [];

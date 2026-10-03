@@ -10,8 +10,9 @@ import { can, type Permission, reaches } from '../../auth/policy.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden } from '../../errors.ts';
 import { listMissionCrew } from '../assignments/repository.ts';
+import { lockCrewMembers } from '../crew/repository.ts';
 import { currentRequirements } from '../matching/candidates.ts';
-import { checkProposals, describeProblems } from '../matching/proposals.ts';
+import { checkProposals, describeProblems } from './proposals.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { approvalState } from './approval.ts';
 import {
@@ -101,6 +102,8 @@ async function submitGuard({ context, mission }: TransitionRun) {
   }
   // Submitted means sound: every proposal passes the proposal check.
   const [requirements, missionCrew] = await Promise.all([listRequirements(context, [mission.id]), listMissionCrew(context, [mission.id])]);
+  // What the check rests on cannot change under it: an availability block, a skill, a status.
+  await lockCrewMembers(context, missionCrew.map(({ crewMemberId }) => crewMemberId));
   const problems = describeProblems(await checkProposals(context, { missions: [mission], requirements, missionCrew, weights: settings.match_weights }));
   if (problems.length > 0) {
     throw guardFailed(

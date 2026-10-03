@@ -35,8 +35,11 @@ export const forbidden = (message: string) => new DomainError('FORBIDDEN', messa
 /** For a record that does not exist and, identically, for one the caller may not see. */
 export const notFound = (what: string) => new DomainError('NOT_FOUND', `${what} was not found.`);
 
-/** The Postgres code for a violated exclusion constraint: the booking rule is the only one. */
-const EXCLUSION_VIOLATION = '23P01';
+/**
+ * The Postgres code for a violated exclusion constraint. The booking rule is the only one, which
+ * `schema.int.test.ts` checks, so this code always means a second hold over one period.
+ */
+export const EXCLUSION_VIOLATION = '23P01';
 
 /** Whether an error, or one it was caused by, is the database refusing a second hold over one period. */
 export function isBookingRuleViolation(error: unknown): boolean {

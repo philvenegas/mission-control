@@ -1,4 +1,4 @@
-import { type AssignmentStatus, matchRunSchema, type Mission, missionEventSchema, missionSchema, type Period } from '@mission-control/contract';
+import { type AssignmentStatus, matchRunSchema, parseRef, type Mission, missionEventSchema, missionSchema, type Period } from '@mission-control/contract';
 import { sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -7,7 +7,11 @@ import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
 import { type ArrangedCrew, arrangeLogin, arrangeMission, weekOf2031 } from '../../test/arrange.ts';
 import { crewOf, errorOf as error, missionOf as mission } from '../../test/missions.ts';
 
-/** Makes a crew member's proposal on a mission a hold, as only a race between two requests could. */
+/**
+ * Makes a crew member's proposal on a mission a hold, as only a race between two requests could:
+ * the API's own checks refuse it first, and `test/arrange.ts` writes as the owner, outside the
+ * request pipeline whose answer to the database's refusal is under test.
+ */
 const TAKE_HOLD: Route = {
   method: 'POST',
   path: '/v1/test/take-hold/:ref',
@@ -67,6 +71,28 @@ async function assignmentOf(missionRef: string, crewMember = ADA) {
   const found = shown.requirements.flatMap(({ crew }) => crew).find((crew) => crew.crew_member.ref === crewMember);
   if (!found) throw new Error(`${crewMember} is not on ${missionRef}`);
   return found.assignment;
+}
+
+/**
+ * Sends a request while another transaction holds a crew member's row lock, and says whether the
+ * request waited for it, and how it was answered once the lock was let go.
+ */
+async function waitsForCrewMember(crewMember: string, request: () => ReturnType<Caller['get']>) {
+  const { inFlight, waited } = await owner.begin(async (tx) => {
+    await tx`SELECT 1 FROM crew_members WHERE ref = ${parseRef('crew_member', crewMember)}
+      AND org_id = (SELECT id FROM organisations WHERE slug = 'artemis') FOR UPDATE`;
+    let settled = false;
+    const sent = Promise.resolve(request()).finally(() => (settled = true));
+    let blocked = false;
+    for (let attempt = 0; attempt < 100 && !blocked && !settled; attempt++) {
+      const [waiting] = await owner`SELECT count(*)::int AS requests FROM pg_locks WHERE NOT granted`;
+      blocked = (waiting?.requests ?? 0) > 0;
+      if (!blocked) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    // Wrapped, so the transaction ends, letting the request go on, before it is awaited.
+    return { inFlight: sent, waited: blocked };
+  });
+  return { waited, status: (await inFlight).status };
 }
 
 let week = 0;
@@ -160,8 +186,12 @@ describe('clash scenarios', () => {
     const priyas = await draft(priya, 'Cancelled B', period);
     await propose(sam, sams);
     await propose(priya, priyas);
+    const proposal = await assignmentOf(sams);
     await sam.post(`/v1/missions/${sams}/cancel`, { note: 'Not needed.' });
     expect(await crewOf(sam, sams)).toEqual([]);
+    const [released] = await owner`SELECT status FROM assignments WHERE ref = ${parseRef('assignment', proposal)}
+      AND org_id = (SELECT id FROM organisations WHERE slug = 'artemis')`;
+    expect(released).toEqual({ status: 'released' });
     expect(await problemsOf(priyas)).toEqual([]);
   });
 
@@ -182,8 +212,9 @@ describe('clash scenarios', () => {
     await propose(sam, await draft(sam, 'Planned A', period));
     const priyas = await draft(priya, 'Planned B', period);
     const run = await bodyOf(await priya.post(`/v1/missions/${priyas}/match`), matchRunSchema);
+    expect(run.slots[0]?.chosen?.crew_member.ref).toMatch(/^CRW-\d+$/);
     expect(run.slots[0]?.chosen?.crew_member.ref).not.toBe(ADA);
-    expect(run.summary.clashes).toBe(0);
+    expect(run.summary).toMatchObject({ filled: 1, clashes: 0 });
     await priya.post(`/v1/match-runs/${run.ref}/apply`, {});
     expect(await problemsOf(priyas)).toEqual([]);
   });
@@ -280,6 +311,9 @@ describe('clash scenarios', () => {
     const second = await arrangeWithAda('approved', period, []);
     const answers = await Promise.all([propose(sam, first), propose(dana, second)]);
     expect(answers.map(({ status }) => status).sort()).toEqual([201, 409]);
+    // Refused by the API's own check if the other hold was already committed, else by the database.
+    const [refusal] = await Promise.all(answers.filter(({ status }) => status === 409).map(error));
+    expect(['HARD_CONSTRAINT_FAILED', 'CREW_HELD']).toContain(refusal?.code);
     expect([...(await crewOf(sam, first)), ...(await crewOf(sam, second))]).toEqual(['pilot: Ada Reyes offered']);
   });
 
@@ -313,6 +347,8 @@ describe('clash scenarios', () => {
       message: `${ref} cannot be launched until every slot is accepted: flight operations 0 of 2.`,
     });
     await propose(farid, ref, 'CRW-2', 'flight operations');
+    // Filled, but not yet accepted.
+    expect((await farid.post(`/v1/missions/${ref}/launch`, {})).status).toBe(409);
     for (const email of ['anouk@helios.example', 'bao@helios.example']) {
       const crewMember = await loginAs(app, 'helios', email);
       const [offer] = await bodyOf(await crewMember.get('/v1/assignments'), z.array(z.object({ ref: z.string() })));
@@ -348,13 +384,22 @@ describe('the proposal check on a mission read', () => {
     expect(await problemsOf(ref)).toEqual([]);
   });
 
+  it('makes a submit and an availability block for its crew wait for each other, so both cannot pass the check', async () => {
+    const period = nextPeriod();
+    const sams = await draft(sam, 'Waited', period);
+    await propose(sam, sams);
+    expect(await waitsForCrewMember(ADA, () => submit(sam, sams))).toMatchObject({ waited: true, status: 200 });
+    expect(await waitsForCrewMember(ADA, () => ada.post('/v1/crew/me/availability', period))).toMatchObject({ waited: true, status: 409 });
+    expect(await waitsForCrewMember(ADA, () => dana.patch(`/v1/crew/${ADA}`, { status: 'active' }))).toMatchObject({ waited: true, status: 200 });
+  });
+
   it('turns a second hold on a crew member over the same period into 409, whatever the application checked', async () => {
     const period = nextPeriod();
     const draftRef = await draft(marcus, 'Race B', period);
     await propose(marcus, draftRef);
     await arrangeWithAda('submitted', period, [{ crewMember: ADA, status: 'held' }]);
     const proposal = await assignmentOf(draftRef);
-    expect(await error(await dana.post(`/v1/test/take-hold/${proposal.slice('ASG-'.length)}`))).toEqual({
+    expect(await error(await dana.post(`/v1/test/take-hold/${parseRef('assignment', proposal)}`))).toEqual({
       status: 409,
       code: 'CREW_HELD',
       message: 'A crew member is already held for an overlapping period.',

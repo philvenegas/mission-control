@@ -14,11 +14,12 @@ import { refNumber, takeNextRef } from '../../db/refs.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, notFound } from '../../errors.ts';
+import { lockCrewMembers } from '../crew/repository.ts';
 import { resolveCrewMember } from '../crew/service.ts';
 import { crewInputs, currentRequirements, matchedMission } from '../matching/candidates.ts';
 import { nameCrewMember, reasonsFor } from '../matching/reasons.ts';
-import { getMissionByRef, insertEvent, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
-import { describeMission, lockMissionForCrewChange, resolveMissionForCrewChange } from '../missions/service.ts';
+import { getMissionByRef, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
+import { describeMission, lockMissionForCrewChange, recordClashes, resolveMissionForCrewChange } from '../missions/service.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
 import { findAssignmentByRef, insertAssignment, moveAssignment } from './repository.ts';
@@ -38,8 +39,7 @@ interface NewAssignment {
 
 /**
  * Puts a crew member in one of a mission's slots, from a match run or by hand. The caller holds the
- * mission's row lock, and its status lets its crew change. A proposal that makes a clash is written
- * into the other mission's history, naming this mission; the event's actor is who made it.
+ * mission's row lock, and its status lets its crew change.
  */
 export async function placeCrewMember(context: TenantContext, mission: MissionRow, newAssignment: NewAssignment) {
   const ref = await takeNextRef(context, 'assignment');
@@ -53,16 +53,7 @@ export async function placeCrewMember(context: TenantContext, mission: MissionRo
     score: newAssignment.score,
     matchRunId: newAssignment.matchRunId,
   });
-  for (const other of newAssignment.clashes) {
-    const { id } = await getMissionByRef(context, refNumber('mission', other.ref));
-    await insertEvent(context, {
-      missionId: id,
-      type: 'clash',
-      fromStatus: null,
-      toStatus: null,
-      note: `${nameCrewMember(newAssignment.crewMember)} is now also proposed on ${formatRef('mission', mission.ref)} ${mission.name}.`,
-    });
-  }
+  await recordClashes(context, mission, newAssignment.crewMember, newAssignment.clashes);
 }
 
 /**
@@ -84,6 +75,7 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
     );
   }
 
+  await lockCrewMembers(context, [crewMember.id]);
   const candidate = exactlyOne(await crewInputs(context, [crewMember]), 'crew member');
   const { settings } = await getOrganisation(context);
   const { failures, clashes, score } = assessCandidate({ crew: candidate, need: requirement, mission: matchedMission(mission) }, settings.match_weights);

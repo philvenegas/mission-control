@@ -1,5 +1,6 @@
 import {
   type CreateMission,
+  type CrewMemberSummary,
   type CrewMission,
   formatRef,
   isStaffableStatus,
@@ -16,7 +17,7 @@ import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden, notFound } from '../../errors.ts';
 import { listMissionCrew } from '../assignments/repository.ts';
-import { type CheckedCrew, checkProposals } from '../matching/proposals.ts';
+import { type CheckedCrew, checkProposals } from './proposals.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
 import { runTransition } from './lifecycle.ts';
@@ -26,6 +27,7 @@ import {
   findMissionByRef,
   findRequirement,
   getMissionByRef,
+  insertEvent,
   insertMission,
   listCurrentDecisions,
   listEvents,
@@ -169,6 +171,23 @@ export async function lockMissionForCrewChange(context: TenantContext, visible: 
     );
   }
   return mission;
+}
+
+/**
+ * Writes into each other draft's history that a crew member it proposes is now proposed on this
+ * mission too: a clash (DESIGN.md section 4). The event's actor is whoever made the proposal.
+ */
+export async function recordClashes(context: TenantContext, mission: MissionRow, crewMember: CrewMemberSummary, clashes: { ref: string }[]) {
+  for (const other of clashes) {
+    const { id } = await getMissionByRef(context, refNumber('mission', other.ref));
+    await insertEvent(context, {
+      missionId: id,
+      type: 'clash',
+      fromStatus: null,
+      toStatus: null,
+      note: `${crewMember.name} ${crewMember.ref} is now also proposed on ${formatRef('mission', mission.ref)} ${mission.name}.`,
+    });
+  }
 }
 
 /** A mission whose crew the caller may change, with its row lock taken for the change. */

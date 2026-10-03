@@ -1,5 +1,4 @@
-import type { AssignmentStatus, CrewStatus, MatchWeights, MissionStatus, Period } from '@mission-control/contract';
-import { overlaps } from './dates.ts';
+import { type AssignmentStatus, type CrewStatus, type MatchWeights, type MissionStatus, type Period, periodsOverlap } from '@mission-control/contract';
 
 // What the matcher is given (DESIGN.md section 6): everything it needs to decide, gathered by the
 // API beforehand, so the matcher itself reads nothing.
@@ -90,5 +89,5 @@ export const skillRecord = (crew: CrewInput, skill: string) => crew.skills.find(
 /** The crew member's assignments on missions other than this one, over its period, with one of the statuses. */
 export const assignmentsElsewhere = (crew: CrewInput, mission: MatchedMission, statuses: readonly AssignmentStatus[]) =>
   crew.assignments.filter(
-    (assignment) => assignment.mission.ref !== mission.ref && statuses.includes(assignment.status) && overlaps(assignment.period, mission.period),
+    (assignment) => assignment.mission.ref !== mission.ref && statuses.includes(assignment.status) && periodsOverlap(assignment.period, mission.period),
   );

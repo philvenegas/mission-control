@@ -124,6 +124,8 @@ export function listRequirements({ tx, orgId }: TenantContext, missionIds: strin
     .orderBy(asc(skills.name));
 }
 
+export type RequirementRow = Awaited<ReturnType<typeof listRequirements>>[number];
+
 export async function upsertRequirement(
   { tx, orgId }: TenantContext,
   values: { missionId: string; skillId: string; minLevel: number; headcount: number },
