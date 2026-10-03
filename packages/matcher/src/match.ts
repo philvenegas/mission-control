@@ -112,10 +112,10 @@ const isCandidate = (pairing: Pairing): pairing is CandidatePairing => pairing.s
 export function match(input: MatchInput): MatchOutput {
   const { mission } = input;
   // By skill name, compared as plain text so that no locale can change the order.
-  const requirements = [...input.requirements].sort((a, b) => Number(a.skill > b.skill) - Number(a.skill < b.skill));
+  const requirements = [...input.requirements].sort((first, second) => Number(first.skill > second.skill) - Number(first.skill < second.skill));
   const crew = input.crew
     .map((crewMember) => ({ crewMember, number: crewNumber(crewMember) }))
-    .sort((a, b) => a.number - b.number)
+    .sort((first, second) => first.number - second.number)
     .map(({ crewMember }) => crewMember);
   const slots = openSlots(requirements);
 
@@ -147,7 +147,7 @@ export function match(input: MatchInput): MatchOutput {
     const chosen = candidates.find((pairing) => pairing.column === answer[slotIndex]);
     const alternates = candidates
       .filter((pairing) => pairing !== chosen)
-      .sort((a, b) => b.score.total - a.score.total || a.column - b.column)
+      .sort((first, second) => second.score.total - first.score.total || first.column - second.column)
       .slice(0, MAX_ALTERNATES);
     return {
       slot,
@@ -185,7 +185,7 @@ function explainUnfilled(skill: string, pairings: Pairing[]): NonNullable<SlotRe
       const held = skillRecord(pairing.crew, skill);
       return pairing.failures.length > 0 && held ? [{ pairing, level: held.level }] : [];
     })
-    .sort((a, b) => a.pairing.failures.length - b.pairing.failures.length || levelsShort(a.pairing.failures) - levelsShort(b.pairing.failures) || a.pairing.column - b.pairing.column)
+    .sort((first, second) => first.pairing.failures.length - second.pairing.failures.length || levelsShort(first.pairing.failures) - levelsShort(second.pairing.failures) || first.pairing.column - second.pairing.column)
     .slice(0, MAX_NEAREST_MISSES)
     .map(({ pairing, level }) => ({ crewMember: summarise(pairing.crew), level, failures: pairing.failures }));
   return { lostTo, nearestMisses };
@@ -199,7 +199,7 @@ function orderWithinRequirements(results: SlotResult[]): SlotResult[] {
     const firstNumber = Math.min(...group.map((result) => result.slot.number));
     const filled = group
       .flatMap((result) => (result.chosen ? [{ result, total: result.chosen.score.total }] : []))
-      .sort((a, b) => b.total - a.total)
+      .sort((first, second) => second.total - first.total)
       .map(({ result }) => result);
     const unfilled = group.filter((result) => !result.chosen);
     return [...filled, ...unfilled].map((result, index) => ({ ...result, slot: { ...result.slot, number: firstNumber + index } }));

@@ -23,35 +23,35 @@ const PROBES: Route[] = [
     method: 'GET',
     path: '/v1/probe/transaction',
     permission: 'me:read',
-    handler: async (c) => {
-      const rows = await c.var.tenant.tx.execute(
+    handler: async (context) => {
+      const rows = await context.var.tenant.tx.execute(
         sql`SELECT current_setting('app.org_id', true) AS org_id, current_user AS database_role`,
       );
-      return c.json(exactlyOne(rows, 'row'));
+      return context.json(exactlyOne(rows, 'row'));
     },
   },
   {
     method: 'GET',
     path: '/v1/probe/pilot-category',
     permission: 'me:read',
-    handler: async (c) => {
-      const { tenant } = c.var;
-      return c.json(exactlyOne(await tenant.tx.select({ category: skills.category }).from(skills).where(artemisPilot(tenant)), 'skill'));
+    handler: async (context) => {
+      const { tenant } = context.var;
+      return context.json(exactlyOne(await tenant.tx.select({ category: skills.category }).from(skills).where(artemisPilot(tenant)), 'skill'));
     },
   },
   {
     method: 'POST',
     path: '/v1/probe/recategorise/:outcome',
     permission: 'me:read',
-    handler: async (c) => {
-      const { tenant } = c.var;
+    handler: async (context) => {
+      const { tenant } = context.var;
       await tenant.tx.update(skills).set({ category: 'changed' }).where(artemisPilot(tenant));
-      const outcome = c.req.param('outcome');
+      const outcome = context.req.param('outcome');
       if (outcome === 'domain-error') throw forbidden('Refused after writing.');
       if (outcome === 'crash') throw new Error('A bug after writing.');
-      if (outcome === 'conflict-response') return c.json({ error: { code: 'INVALID_INPUT', message: 'Refused by response.' } }, 409);
+      if (outcome === 'conflict-response') return context.json({ error: { code: 'INVALID_INPUT', message: 'Refused by response.' } }, 409);
       if (outcome === 'bad-sql') await tenant.tx.execute(sql`SELECT * FROM no_such_table`);
-      return c.json({ category: 'changed' });
+      return context.json({ category: 'changed' });
     },
   },
 ];
@@ -138,11 +138,11 @@ describe('permissions', () => {
     const reported: unknown[] = [];
     const careless = createApp({ db: api.db, token: TEST_TOKEN, onUnexpectedError: (error) => reported.push(error) });
     let handlerRan = false;
-    careless.get('/v1/unguarded', (c) => {
+    careless.get('/v1/unguarded', (context) => {
       handlerRan = true;
-      return c.json({ secret: 'everything' });
+      return context.json({ secret: 'everything' });
     });
-    careless.all('/v1/unguarded-any-method', (c) => c.json({ secret: 'everything' }));
+    careless.all('/v1/unguarded-any-method', (context) => context.json({ secret: 'everything' }));
     const caller = await loginAs(careless, 'artemis', 'dana@artemis.example');
     expect((await caller.get('/v1/unguarded')).status).toBe(500);
     expect((await caller.post('/v1/unguarded-any-method')).status).toBe(500);

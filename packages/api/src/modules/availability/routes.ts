@@ -8,15 +8,15 @@ export const availabilityRoutes: Route[] = [
     method: 'GET',
     path: '/v1/crew/:ref/availability',
     permission: 'crew:read',
-    handler: async (c) => c.json<AvailabilityBlock[]>(await listAvailability(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<AvailabilityBlock[]>(await listAvailability(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'POST',
     path: '/v1/crew/:ref/availability',
     permission: 'availability:manage',
-    handler: async (c) =>
-      c.json<AvailabilityBlock>(
-        await addAvailabilityBlock(c.var.tenant, pathParam(c, 'ref'), await readBody(c, createAvailabilityBlockSchema)),
+    handler: async (context) =>
+      context.json<AvailabilityBlock>(
+        await addAvailabilityBlock(context.var.tenant, pathParam(context, 'ref'), await readBody(context, createAvailabilityBlockSchema)),
         201,
       ),
   },
@@ -24,9 +24,9 @@ export const availabilityRoutes: Route[] = [
     method: 'DELETE',
     path: '/v1/availability/:ref',
     permission: 'availability:manage',
-    handler: async (c) => {
-      await removeAvailabilityBlock(c.var.tenant, pathParam(c, 'ref'));
-      return c.body(null, 204);
+    handler: async (context) => {
+      await removeAvailabilityBlock(context.var.tenant, pathParam(context, 'ref'));
+      return context.body(null, 204);
     },
   },
 ];

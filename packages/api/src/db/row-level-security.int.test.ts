@@ -53,10 +53,10 @@ describe('every table', () => {
       LEFT JOIN pg_policies p ON p.schemaname = 'public' AND p.tablename = c.relname
       WHERE c.relnamespace = 'public'::regnamespace AND c.relname IN ${owner(tables.map((table) => table.name))}
       GROUP BY c.relname, c.relrowsecurity, c.relforcerowsecurity`;
-    expect(found.sort((a, b) => a.name.localeCompare(b.name))).toEqual(
+    expect(found.sort((first, second) => first.name.localeCompare(second.name))).toEqual(
       tables
         .map(({ name }) => ({ name, enabled: true, forced: true, policies: ['tenant_isolation ALL public'] }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
+        .sort((first, second) => first.name.localeCompare(second.name)),
     );
   });
 });

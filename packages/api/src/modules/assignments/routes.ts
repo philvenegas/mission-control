@@ -8,39 +8,39 @@ export const assignmentRoutes: Route[] = [
     method: 'POST',
     path: '/v1/missions/:ref/assignments',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<Mission>(await assignByHand(c.var.tenant, pathParam(c, 'ref'), await readBody(c, assignCrewSchema)), 201),
+    handler: async (context) => context.json<Mission>(await assignByHand(context.var.tenant, pathParam(context, 'ref'), await readBody(context, assignCrewSchema)), 201),
   },
   {
     method: 'DELETE',
     path: '/v1/missions/:ref/assignments',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<Mission>(await clearProposals(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<Mission>(await clearProposals(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'DELETE',
     path: '/v1/assignments/:ref',
     permission: 'missions:assign-crew',
-    handler: async (c) => c.json<Mission>(await releaseAssignment(c.var.tenant, pathParam(c, 'ref'))),
+    handler: async (context) => context.json<Mission>(await releaseAssignment(context.var.tenant, pathParam(context, 'ref'))),
   },
   {
     method: 'GET',
     path: '/v1/assignments',
     permission: 'assignments:read',
-    handler: async (c) => c.json<CrewAssignment[]>(await listOwnAssignments(c.var.tenant)),
+    handler: async (context) => context.json<CrewAssignment[]>(await listOwnAssignments(context.var.tenant)),
   },
   {
     method: 'POST',
     path: '/v1/assignments/:ref/accept',
     permission: 'assignments:respond',
-    handler: async (c) => c.json<CrewAssignment>(await respondToAssignment(c.var.tenant, pathParam(c, 'ref'), { to: 'accepted' })),
+    handler: async (context) => context.json<CrewAssignment>(await respondToAssignment(context.var.tenant, pathParam(context, 'ref'), { to: 'accepted' })),
   },
   {
     method: 'POST',
     path: '/v1/assignments/:ref/decline',
     permission: 'assignments:respond',
-    handler: async (c) => {
-      const { reason } = await readBody(c, declineAssignmentSchema);
-      return c.json<CrewAssignment>(await respondToAssignment(c.var.tenant, pathParam(c, 'ref'), { to: 'declined', reason: reason ?? null }));
+    handler: async (context) => {
+      const { reason } = await readBody(context, declineAssignmentSchema);
+      return context.json<CrewAssignment>(await respondToAssignment(context.var.tenant, pathParam(context, 'ref'), { to: 'declined', reason: reason ?? null }));
     },
   },
 ];

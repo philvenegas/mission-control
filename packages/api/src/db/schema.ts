@@ -94,11 +94,11 @@ export const users = pgTable(
     role: text('role').$type<Role>().notNull(),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('users_org_id_id').on(t.orgId, t.id),
-    unique('users_org_id_email').on(t.orgId, t.email),
-    check('users_role', oneOf(t.role, ROLES)),
-    tenantPolicy(t.orgId),
+  (table) => [
+    unique('users_org_id_id').on(table.orgId, table.id),
+    unique('users_org_id_email').on(table.orgId, table.email),
+    check('users_role', oneOf(table.role, ROLES)),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -113,12 +113,12 @@ export const crewMembers = pgTable(
     status: text('status').$type<CrewStatus>().notNull().default('active'),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('crew_members_org_id_id').on(t.orgId, t.id),
-    unique('crew_members_org_id_ref').on(t.orgId, t.ref),
-    foreignKey({ name: 'crew_members_user_fk', columns: [t.orgId, t.userId], foreignColumns: [users.orgId, users.id] }),
-    check('crew_members_status', oneOf(t.status, CREW_STATUSES)),
-    tenantPolicy(t.orgId),
+  (table) => [
+    unique('crew_members_org_id_id').on(table.orgId, table.id),
+    unique('crew_members_org_id_ref').on(table.orgId, table.ref),
+    foreignKey({ name: 'crew_members_user_fk', columns: [table.orgId, table.userId], foreignColumns: [users.orgId, users.id] }),
+    check('crew_members_status', oneOf(table.status, CREW_STATUSES)),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -130,7 +130,7 @@ export const skills = pgTable(
     name: text('name').notNull(),
     category: text('category').notNull(),
   },
-  (t) => [unique('skills_org_id_id').on(t.orgId, t.id), unique('skills_org_id_name').on(t.orgId, t.name), tenantPolicy(t.orgId)],
+  (table) => [unique('skills_org_id_id').on(table.orgId, table.id), unique('skills_org_id_name').on(table.orgId, table.name), tenantPolicy(table.orgId)],
 );
 
 export const crewSkills = pgTable(
@@ -142,16 +142,16 @@ export const crewSkills = pgTable(
     level: integer('level').notNull(),
     certifiedUntil: date('certified_until'),
   },
-  (t) => [
-    primaryKey({ name: 'crew_skills_pk', columns: [t.crewMemberId, t.skillId] }),
+  (table) => [
+    primaryKey({ name: 'crew_skills_pk', columns: [table.crewMemberId, table.skillId] }),
     foreignKey({
       name: 'crew_skills_crew_member_fk',
-      columns: [t.orgId, t.crewMemberId],
+      columns: [table.orgId, table.crewMemberId],
       foreignColumns: [crewMembers.orgId, crewMembers.id],
     }),
-    foreignKey({ name: 'crew_skills_skill_fk', columns: [t.orgId, t.skillId], foreignColumns: [skills.orgId, skills.id] }),
-    check('crew_skills_level', validLevel(t.level)),
-    tenantPolicy(t.orgId),
+    foreignKey({ name: 'crew_skills_skill_fk', columns: [table.orgId, table.skillId], foreignColumns: [skills.orgId, skills.id] }),
+    check('crew_skills_level', validLevel(table.level)),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -166,16 +166,16 @@ export const availabilityBlocks = pgTable(
     reason: text('reason'),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('availability_blocks_org_id_id').on(t.orgId, t.id),
-    unique('availability_blocks_org_id_ref').on(t.orgId, t.ref),
+  (table) => [
+    unique('availability_blocks_org_id_id').on(table.orgId, table.id),
+    unique('availability_blocks_org_id_ref').on(table.orgId, table.ref),
     foreignKey({
       name: 'availability_blocks_crew_member_fk',
-      columns: [t.orgId, t.crewMemberId],
+      columns: [table.orgId, table.crewMemberId],
       foreignColumns: [crewMembers.orgId, crewMembers.id],
     }),
-    check('availability_blocks_period', sql`NOT isempty(${t.period})`),
-    tenantPolicy(t.orgId),
+    check('availability_blocks_period', sql`NOT isempty(${table.period})`),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -194,20 +194,20 @@ export const missions = pgTable(
     submissionNo: integer('submission_no').notNull().default(0),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('missions_org_id_id').on(t.orgId, t.id),
-    unique('missions_org_id_ref').on(t.orgId, t.ref),
-    foreignKey({ name: 'missions_owner_fk', columns: [t.orgId, t.ownerId], foreignColumns: [users.orgId, users.id] }),
+  (table) => [
+    unique('missions_org_id_id').on(table.orgId, table.id),
+    unique('missions_org_id_ref').on(table.orgId, table.ref),
+    foreignKey({ name: 'missions_owner_fk', columns: [table.orgId, table.ownerId], foreignColumns: [users.orgId, users.id] }),
     foreignKey({
       name: 'missions_submitted_by_fk',
-      columns: [t.orgId, t.submittedBy],
+      columns: [table.orgId, table.submittedBy],
       foreignColumns: [users.orgId, users.id],
     }),
     // Lets an assignment's foreign key carry the period, so the two cannot differ.
-    unique('missions_org_id_id_period').on(t.orgId, t.id, t.period),
-    check('missions_status', oneOf(t.status, MISSION_STATUSES)),
-    check('missions_period', sql`NOT isempty(${t.period})`),
-    tenantPolicy(t.orgId),
+    unique('missions_org_id_id_period').on(table.orgId, table.id, table.period),
+    check('missions_status', oneOf(table.status, MISSION_STATUSES)),
+    check('missions_period', sql`NOT isempty(${table.period})`),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -221,25 +221,25 @@ export const missionRequirements = pgTable(
     minLevel: integer('min_level').notNull(),
     headcount: integer('headcount').notNull().default(1),
   },
-  (t) => [
-    unique('mission_requirements_org_id_id').on(t.orgId, t.id),
+  (table) => [
+    unique('mission_requirements_org_id_id').on(table.orgId, table.id),
     // Lets an assignment's foreign key carry the mission, so its requirement is one of that mission's.
-    unique('mission_requirements_org_id_mission_id_id').on(t.orgId, t.missionId, t.id),
+    unique('mission_requirements_org_id_mission_id_id').on(table.orgId, table.missionId, table.id),
     // At most one requirement per skill, so a requirement is addressed by its skill.
-    unique('mission_requirements_mission_skill').on(t.missionId, t.skillId),
+    unique('mission_requirements_mission_skill').on(table.missionId, table.skillId),
     foreignKey({
       name: 'mission_requirements_mission_fk',
-      columns: [t.orgId, t.missionId],
+      columns: [table.orgId, table.missionId],
       foreignColumns: [missions.orgId, missions.id],
     }),
     foreignKey({
       name: 'mission_requirements_skill_fk',
-      columns: [t.orgId, t.skillId],
+      columns: [table.orgId, table.skillId],
       foreignColumns: [skills.orgId, skills.id],
     }),
-    check('mission_requirements_min_level', validLevel(t.minLevel)),
-    check('mission_requirements_headcount', sql`${t.headcount} >= 1`),
-    tenantPolicy(t.orgId),
+    check('mission_requirements_min_level', validLevel(table.minLevel)),
+    check('mission_requirements_headcount', sql`${table.headcount} >= 1`),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -256,16 +256,16 @@ export const matchRuns = pgTable(
     appliedAt: timestamp('applied_at', { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('match_runs_org_id_id').on(t.orgId, t.id),
-    unique('match_runs_org_id_ref').on(t.orgId, t.ref),
+  (table) => [
+    unique('match_runs_org_id_id').on(table.orgId, table.id),
+    unique('match_runs_org_id_ref').on(table.orgId, table.ref),
     foreignKey({
       name: 'match_runs_mission_fk',
-      columns: [t.orgId, t.missionId],
+      columns: [table.orgId, table.missionId],
       foreignColumns: [missions.orgId, missions.id],
     }),
-    foreignKey({ name: 'match_runs_created_by_fk', columns: [t.orgId, t.createdBy], foreignColumns: [users.orgId, users.id] }),
-    tenantPolicy(t.orgId),
+    foreignKey({ name: 'match_runs_created_by_fk', columns: [table.orgId, table.createdBy], foreignColumns: [users.orgId, users.id] }),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -289,33 +289,33 @@ export const assignments = pgTable(
     declineReason: text('decline_reason'),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('assignments_org_id_id').on(t.orgId, t.id),
-    unique('assignments_org_id_ref').on(t.orgId, t.ref),
+  (table) => [
+    unique('assignments_org_id_id').on(table.orgId, table.id),
+    unique('assignments_org_id_ref').on(table.orgId, table.ref),
     foreignKey({
       name: 'assignments_mission_fk',
-      columns: [t.orgId, t.missionId, t.period],
+      columns: [table.orgId, table.missionId, table.period],
       foreignColumns: [missions.orgId, missions.id, missions.period],
     }).onUpdate('cascade'),
     foreignKey({
       name: 'assignments_requirement_fk',
-      columns: [t.orgId, t.missionId, t.requirementId],
+      columns: [table.orgId, table.missionId, table.requirementId],
       foreignColumns: [missionRequirements.orgId, missionRequirements.missionId, missionRequirements.id],
     }),
     foreignKey({
       name: 'assignments_crew_member_fk',
-      columns: [t.orgId, t.crewMemberId],
+      columns: [table.orgId, table.crewMemberId],
       foreignColumns: [crewMembers.orgId, crewMembers.id],
     }),
     foreignKey({
       name: 'assignments_match_run_fk',
-      columns: [t.orgId, t.matchRunId],
+      columns: [table.orgId, table.matchRunId],
       foreignColumns: [matchRuns.orgId, matchRuns.id],
     }),
-    foreignKey({ name: 'assignments_created_by_fk', columns: [t.orgId, t.createdBy], foreignColumns: [users.orgId, users.id] }),
-    check('assignments_status', oneOf(t.status, ASSIGNMENT_STATUSES)),
+    foreignKey({ name: 'assignments_created_by_fk', columns: [table.orgId, table.createdBy], foreignColumns: [users.orgId, users.id] }),
+    check('assignments_status', oneOf(table.status, ASSIGNMENT_STATUSES)),
     // The booking rule, `no_double_booking`, is an exclusion constraint added by a hand-written migration.
-    tenantPolicy(t.orgId),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -331,21 +331,21 @@ export const missionApprovals = pgTable(
     note: text('note'),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('mission_approvals_org_id_id').on(t.orgId, t.id),
-    unique('mission_approvals_once_per_submission').on(t.missionId, t.submissionNo, t.approverId),
+  (table) => [
+    unique('mission_approvals_org_id_id').on(table.orgId, table.id),
+    unique('mission_approvals_once_per_submission').on(table.missionId, table.submissionNo, table.approverId),
     foreignKey({
       name: 'mission_approvals_mission_fk',
-      columns: [t.orgId, t.missionId],
+      columns: [table.orgId, table.missionId],
       foreignColumns: [missions.orgId, missions.id],
     }),
     foreignKey({
       name: 'mission_approvals_approver_fk',
-      columns: [t.orgId, t.approverId],
+      columns: [table.orgId, table.approverId],
       foreignColumns: [users.orgId, users.id],
     }),
-    check('mission_approvals_decision', oneOf(t.decision, APPROVAL_DECISIONS)),
-    tenantPolicy(t.orgId),
+    check('mission_approvals_decision', oneOf(table.decision, APPROVAL_DECISIONS)),
+    tenantPolicy(table.orgId),
   ],
 );
 
@@ -362,15 +362,15 @@ export const missionEvents = pgTable(
     note: text('note'),
     createdAt: createdAt(),
   },
-  (t) => [
-    unique('mission_events_org_id_id').on(t.orgId, t.id),
+  (table) => [
+    unique('mission_events_org_id_id').on(table.orgId, table.id),
     foreignKey({
       name: 'mission_events_mission_fk',
-      columns: [t.orgId, t.missionId],
+      columns: [table.orgId, table.missionId],
       foreignColumns: [missions.orgId, missions.id],
     }),
-    foreignKey({ name: 'mission_events_actor_fk', columns: [t.orgId, t.actorId], foreignColumns: [users.orgId, users.id] }),
-    check('mission_events_type', oneOf(t.type, MISSION_EVENT_TYPES)),
-    tenantPolicy(t.orgId),
+    foreignKey({ name: 'mission_events_actor_fk', columns: [table.orgId, table.actorId], foreignColumns: [users.orgId, users.id] }),
+    check('mission_events_type', oneOf(table.type, MISSION_EVENT_TYPES)),
+    tenantPolicy(table.orgId),
   ],
 );

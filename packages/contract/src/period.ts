@@ -12,4 +12,4 @@ export const periodSchema = z.object({ from: isoDaySchema, to: isoDaySchema }).r
 export type Period = z.infer<typeof periodSchema>;
 
 /** Whether two periods share at least one day. */
-export const periodsOverlap = (a: Period, b: Period) => a.from < b.to && b.from < a.to;
+export const periodsOverlap = (first: Period, second: Period) => first.from < second.to && second.from < first.to;

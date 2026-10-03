@@ -10,9 +10,9 @@ function random(seed: number) {
   let state = seed;
   return () => {
     state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
+    let mixed = Math.imul(state ^ (state >>> 15), 1 | state);
+    mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+    return ((mixed ^ (mixed >>> 14)) >>> 0) / 4_294_967_296;
   };
 }
 
@@ -47,8 +47,8 @@ interface Quality {
   clashes: number;
   cost: number;
 }
-const better = (a: Quality, b: Quality) =>
-  a.filled !== b.filled ? a.filled > b.filled : a.clashes !== b.clashes ? a.clashes < b.clashes : a.cost < b.cost;
+const better = (first: Quality, second: Quality) =>
+  first.filled !== second.filled ? first.filled > second.filled : first.clashes !== second.clashes ? first.clashes < second.clashes : first.cost < second.cost;
 
 const isClash = (crew: CrewInput) => crew.assignments.some((assignment) => assignment.status === 'proposed');
 

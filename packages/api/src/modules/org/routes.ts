@@ -7,6 +7,6 @@ export const orgRoutes: Route[] = [
     method: 'GET',
     path: '/v1/org',
     permission: 'org:read',
-    handler: async (c) => c.json<OrgResponse>(await getOrganisation(c.var.tenant)),
+    handler: async (context) => context.json<OrgResponse>(await getOrganisation(context.var.tenant)),
   },
 ];
