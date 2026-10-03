@@ -38,6 +38,32 @@ describe('the policy, as DESIGN.md section 5 states it', () => {
   });
 });
 
+describe('the policy for missions, as DESIGN.md section 5 states it', () => {
+  it('lets directors and mission leads read every mission, and a crew member only their own', () => {
+    expect(scopeOf('director', 'missions:read')).toBe('all');
+    expect(scopeOf('mission_lead', 'missions:read')).toBe('all');
+    expect(scopeOf('crew_member', 'missions:read')).toBe('own');
+  });
+
+  it('lets a director act on any mission and a mission lead on their own, but never a crew member', () => {
+    for (const permission of ['missions:edit', 'missions:history', 'missions:submit', 'missions:launch', 'missions:complete', 'missions:cancel'] as const) {
+      expect(scopeOf('director', permission)).toBe('all');
+      expect(scopeOf('mission_lead', permission)).toBe('own');
+      expect(can('crew_member', permission)).toBe(false);
+    }
+    expect(can('mission_lead', 'missions:create')).toBe(true);
+    expect(can('crew_member', 'missions:create')).toBe(false);
+  });
+
+  it('lets only a director approve, reject, or cancel a mission that is under way', () => {
+    for (const permission of ['missions:approve', 'missions:reject', 'missions:cancel-active'] as const) {
+      expect(scopeOf('director', permission)).toBe('all');
+      expect(can('mission_lead', permission)).toBe(false);
+      expect(can('crew_member', permission)).toBe(false);
+    }
+  });
+});
+
 describe('reaching a record', () => {
   const ada = { role: 'crew_member' as const, userId: 'user-ada' };
   const dana = { role: 'director' as const, userId: 'user-dana' };

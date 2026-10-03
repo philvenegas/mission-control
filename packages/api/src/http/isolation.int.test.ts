@@ -25,10 +25,44 @@ interface OwnRecords {
   skill: string;
   /** A name for a new crew member, distinct from anything the other organisation has. */
   recruit: string;
+  /** A seeded draft. */
+  draft: string;
+  /** The organisation's slug, for arranging a mission in a given status. */
+  slug: string;
 }
 
-// Artemis has CRW-9 to CRW-12, AVL-1 to AVL-3 and a pilot skill; Helios Labs has none of them.
-const ARTEMIS_ONLY = { crewMember: 'CRW-12', availabilityBlock: 'AVL-1', skill: 'pilot' };
+// Artemis has CRW-9 to CRW-12, AVL-1 to AVL-3, MSN-3 to MSN-7 and a pilot skill; Helios Labs has none of them.
+const ARTEMIS_ONLY = { crewMember: 'CRW-12', availabilityBlock: 'AVL-1', skill: 'pilot', mission: 'MSN-7' };
+
+let arranged = 5000;
+
+/**
+ * A mission of the caller's organisation in the given status, owned and submitted by its mission
+ * lead, needing one of its own skill, so that each transition's guard holds: an approved one has its
+ * slot accepted. Arranged as the owner, since crew cannot yet respond through the API.
+ */
+async function missionIn(own: OwnRecords, status: 'draft' | 'submitted' | 'approved' | 'active') {
+  const ref = arranged++;
+  const day = new Date(Date.UTC(2031, 0, 1) + (ref - 5000) * 2 * 86_400_000).toISOString().slice(0, 10);
+  await owner`
+    WITH org AS (SELECT id FROM organisations WHERE slug = ${own.slug}),
+    lead AS (SELECT id FROM users WHERE org_id = (SELECT id FROM org) AND role = 'mission_lead' ORDER BY email LIMIT 1),
+    mission AS (
+      INSERT INTO missions (org_id, ref, name, period, status, owner_id, submitted_by, submission_no)
+      SELECT org.id, ${ref}, ${`Sweep ${own.slug} ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, lead.id,
+             CASE WHEN ${status} = 'draft' THEN NULL ELSE lead.id END, CASE WHEN ${status} = 'draft' THEN 0 ELSE 1 END
+      FROM org, lead RETURNING id, org_id, period, owner_id),
+    requirement AS (
+      INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level)
+      SELECT mission.org_id, mission.id, skills.id, 1 FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = ${own.skill}
+      RETURNING id, mission_id)
+    INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
+    SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, 'accepted', mission.owner_id
+    FROM mission JOIN requirement ON requirement.mission_id = mission.id
+    JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.ref = 2
+    WHERE ${status} = 'approved'`;
+  return `MSN-${ref}`;
+}
 
 /**
  * The isolation sweep. Every route that acts as a logged-in user is listed here; the coverage test
@@ -102,6 +136,67 @@ const SWEEP_ENTRIES: [string, SweepEntry][] = [
       intoArtemis: [(helios) => helios.delete(`/v1/availability/${ARTEMIS_ONLY.availabilityBlock}`)],
     },
   ],
+  ['GET /v1/missions', { call: (director) => director.get('/v1/missions') }],
+  ['POST /v1/missions', { call: (director, own) => director.post('/v1/missions', { name: `${own.recruit}'s mission`, from: '2028-06-01', to: '2028-06-05' }) }],
+  [
+    'GET /v1/missions/:ref',
+    { call: (director, own) => director.get(`/v1/missions/${own.draft}`), intoArtemis: [(helios) => helios.get(`/v1/missions/${ARTEMIS_ONLY.mission}`)] },
+  ],
+  [
+    'PATCH /v1/missions/:ref',
+    {
+      call: (director, own) => director.patch(`/v1/missions/${own.draft}`, { description: 'Swept.' }),
+      intoArtemis: [(helios) => helios.patch(`/v1/missions/${ARTEMIS_ONLY.mission}`, { name: 'Taken' })],
+    },
+  ],
+  [
+    'GET /v1/missions/:ref/events',
+    {
+      call: (director, own) => director.get(`/v1/missions/${own.draft}/events`),
+      intoArtemis: [(helios) => helios.get(`/v1/missions/${ARTEMIS_ONLY.mission}/events`)],
+    },
+  ],
+  [
+    'PUT /v1/missions/:ref/requirements/:skill',
+    {
+      call: (director, own) => director.put(`/v1/missions/${own.draft}/requirements/${encodeURIComponent(own.skill)}`, { min_level: 2 }),
+      intoArtemis: [
+        // An Artemis mission, with a skill Helios Labs has.
+        (helios) => helios.put(`/v1/missions/${ARTEMIS_ONLY.mission}/requirements/EVA`, { min_level: 2 }),
+        // Helios Labs' own draft, with a skill only Artemis has.
+        (helios) => helios.put(`/v1/missions/MSN-2/requirements/${ARTEMIS_ONLY.skill}`, { min_level: 2 }),
+      ],
+    },
+  ],
+  [
+    'DELETE /v1/missions/:ref/requirements/:skill',
+    {
+      call: async (director, own) => {
+        const draft = await missionIn(own, 'draft');
+        return director.delete(`/v1/missions/${draft}/requirements/${encodeURIComponent(own.skill)}`);
+      },
+      intoArtemis: [
+        (helios) => helios.delete(`/v1/missions/${ARTEMIS_ONLY.mission}/requirements/EVA`),
+        (helios) => helios.delete(`/v1/missions/MSN-2/requirements/${ARTEMIS_ONLY.skill}`),
+      ],
+    },
+  ],
+  ...(
+    [
+      ['submit', 'draft'],
+      ['approve', 'submitted'],
+      ['reject', 'submitted'],
+      ['launch', 'approved'],
+      ['complete', 'active'],
+      ['cancel', 'draft'],
+    ] as const
+  ).map(([transition, from]): [string, SweepEntry] => [
+    `POST /v1/missions/:ref/${transition}`,
+    {
+      call: async (director, own) => director.post(`/v1/missions/${await missionIn(own, from)}/${transition}`, { note: 'Swept.' }),
+      intoArtemis: [(helios) => helios.post(`/v1/missions/${ARTEMIS_ONLY.mission}/${transition}`, { note: 'Swept.' })],
+    },
+  ]),
 ];
 const SWEEP = new Map(SWEEP_ENTRIES);
 
@@ -112,8 +207,18 @@ const PUBLIC = ['GET /v1/health', 'POST /v1/auth/login'];
 const PIPELINE = 'ALL /v1/*';
 
 const ORGANISATIONS = [
-  { slug: 'artemis', director: 'dana@artemis.example', own: { crewMember: 'CRW-2', skill: 'comms', recruit: 'Aster Quill' }, otherSlug: 'helios' },
-  { slug: 'helios', director: 'ines@helios.example', own: { crewMember: 'CRW-2', skill: 'EVA', recruit: 'Helio Brandt' }, otherSlug: 'artemis' },
+  {
+    slug: 'artemis',
+    director: 'dana@artemis.example',
+    own: { crewMember: 'CRW-2', skill: 'comms', recruit: 'Aster Quill', draft: 'MSN-6', slug: 'artemis' },
+    otherSlug: 'helios',
+  },
+  {
+    slug: 'helios',
+    director: 'ines@helios.example',
+    own: { crewMember: 'CRW-2', skill: 'EVA', recruit: 'Helio Brandt', draft: 'MSN-2', slug: 'helios' },
+    otherSlug: 'artemis',
+  },
 ];
 
 /** Every string value anywhere in a JSON document, lower-cased. */
@@ -175,6 +280,11 @@ describe('a Helios Labs director naming Artemis records', () => {
     expect(tala).toEqual({ name: 'Tala Moreno', blocks: 1, skills: 1 });
     const [omar] = await owner`SELECT count(*)::int AS blocks FROM availability_blocks WHERE ref = 1 AND org_id = (SELECT id FROM organisations WHERE slug = 'artemis')`;
     expect(omar).toEqual({ blocks: 1 });
+    const [ioFlyby] = await owner`
+      SELECT m.name, m.status, (SELECT count(*)::int FROM mission_requirements r WHERE r.mission_id = m.id) AS requirements,
+             (SELECT count(*)::int FROM mission_events e WHERE e.mission_id = m.id) AS events
+      FROM missions m JOIN organisations o ON o.id = m.org_id WHERE o.slug = 'artemis' AND m.ref = 7`;
+    expect(ioFlyby).toEqual({ name: 'Io Flyby', status: 'draft', requirements: 2, events: 0 });
   });
 });
 

@@ -9,6 +9,7 @@ import { withTenant } from '../db/tenant.ts';
 import { DomainError, forbidden, internal, notFound, unauthenticated } from '../errors.ts';
 import { availabilityRoutes } from '../modules/availability/routes.ts';
 import { crewRoutes } from '../modules/crew/routes.ts';
+import { missionRoutes } from '../modules/missions/routes.ts';
 import { orgRoutes } from '../modules/org/routes.ts';
 import { skillRoutes } from '../modules/skills/routes.ts';
 import { userRoutes } from '../modules/users/routes.ts';
@@ -26,7 +27,7 @@ export interface AppDependencies {
   onUnexpectedError?: (error: unknown) => void;
 }
 
-const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRoutes, ...availabilityRoutes];
+const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRoutes, ...availabilityRoutes, ...missionRoutes];
 
 /** Thrown inside the request's transaction to roll it back after the response has been decided. */
 const ROLL_BACK = Symbol('roll back');

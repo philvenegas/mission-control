@@ -1,13 +1,10 @@
 import { z } from 'zod';
 import { CREW_STATUSES, MAX_LEVEL, MIN_LEVEL } from './domain.ts';
 import { endsAfterStart, isoDaySchema, PERIOD_ORDER } from './period.ts';
+import { nameSchema as name } from './text.ts';
 
-/** Longest a name may be. */
-export const MAX_NAME_LENGTH = 120;
 /** Longest an availability block's reason may be. */
 export const MAX_REASON_LENGTH = 500;
-
-const name = z.string().trim().min(1).max(MAX_NAME_LENGTH);
 
 export const skillSchema = z.object({ name: z.string(), category: z.string() });
 export type Skill = z.infer<typeof skillSchema>;

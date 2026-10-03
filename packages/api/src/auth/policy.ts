@@ -2,7 +2,8 @@ import type { Role } from '@mission-control/contract';
 
 /**
  * How far a role's permission reaches: every record in the organisation, or only the caller's
- * own (a crew member's own crew record and what hangs off it).
+ * own. A crew member's own is their crew record and what hangs off it, and the missions they are
+ * offered or accepted on; a mission lead's own is the missions they own.
  */
 type Scope = 'all' | 'own';
 
@@ -28,6 +29,24 @@ const PERMISSIONS = {
   'crew:set-status': { director: 'all' },
   /** Add and remove availability blocks. */
   'availability:manage': { director: 'all', crew_member: 'own' },
+  /** Read missions. A crew member reads only those they are offered or accepted on, and only their own slot. */
+  'missions:read': { director: 'all', mission_lead: 'all', crew_member: 'own' },
+  /** Create a mission, which the creator then owns. */
+  'missions:create': { director: 'all', mission_lead: 'all' },
+  /** Change a draft: its details, period and requirements. */
+  'missions:edit': { director: 'all', mission_lead: 'own' },
+  /** Read a mission's history. */
+  'missions:history': { director: 'all', mission_lead: 'own' },
+  // The transitions (DESIGN.md section 4). The lifecycle table names which each one needs.
+  'missions:submit': { director: 'all', mission_lead: 'own' },
+  'missions:approve': { director: 'all' },
+  'missions:reject': { director: 'all' },
+  'missions:launch': { director: 'all', mission_lead: 'own' },
+  'missions:complete': { director: 'all', mission_lead: 'own' },
+  /** Cancel a mission before it is active. */
+  'missions:cancel': { director: 'all', mission_lead: 'own' },
+  /** Cancel a mission that is under way. */
+  'missions:cancel-active': { director: 'all' },
 } as const satisfies Record<string, Partial<Record<Role, Scope>>>;
 
 export type Permission = keyof typeof PERMISSIONS;

@@ -45,7 +45,6 @@ export async function findCrewMemberByUser(context: TenantContext, userId: strin
 
 /** The skills held by each of the given crew members, by skill name. */
 export function listCrewSkills({ tx, orgId }: TenantContext, crewMemberIds: string[]) {
-  if (crewMemberIds.length === 0) return Promise.resolve([]);
   return tx
     .select({ crewMemberId: crewSkills.crewMemberId, skill: skills.name, level: crewSkills.level, certifiedUntil: crewSkills.certifiedUntil })
     .from(crewSkills)
