@@ -32,7 +32,7 @@ const asShown = (output: string, apiUrl: string) =>
  * Runs one command as a person at a terminal would see it: both streams in the order written. A
  * login without `--password-stdin` asks for the password; the terminal types the demo password.
  */
-async function runAsShown(step: WalkthroughStep, env: Record<string, string>) {
+async function runAsShown(step: WalkthroughStep, env: { MCTL_CONFIG: string; MCTL_API: string }) {
   let written = '';
   const asksForPassword = step.args[0] === 'login' && !step.args.includes('--password-stdin');
   const terminal = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => terminal });
@@ -42,13 +42,14 @@ async function runAsShown(step: WalkthroughStep, env: Record<string, string>) {
   };
   const io: Io = { stdout: { write }, stderr: { write }, stdin: asksForPassword ? terminal : Readable.from(['']), env, home: scratch() };
   const exitCode = await run(step.args, io);
-  return { command: step.command, exitCode, output: asShown(written, env.MCTL_API ?? '') };
+  return { command: step.command, exitCode, output: asShown(written, env.MCTL_API) };
 }
 
 /** Runs a repository script as the README says to, against the test database and API. */
 const script = (name: string, env: Record<string, string>) => exec('pnpm', ['--silent', name], { cwd: ROOT, env: { ...process.env, ...env } });
 
 describe('the README walk-through', () => {
+  // DESIGN.md section 8 gives the walk-through three acts.
   it('has the three acts', () => {
     expect(acts).toHaveLength(3);
   });

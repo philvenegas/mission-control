@@ -1,7 +1,7 @@
 # Mission Control
 
 Mission Control lets a space organisation plan missions and staff them with the right crew.
-A mission lead says what a mission needs; the matcher proposes a full crew and explains every choice and every exclusion, and never double-books anyone; a director approves, and crew accept or decline.
+A mission lead says what a mission needs; the matcher proposes a full crew and explains every choice and every exclusion, and never puts anyone on two missions at once; a director approves, and crew accept or decline.
 It is a multi-tenant HTTP API and a CLI, `mctl`, that exercises every workflow; each organisation sees only its own data.
 
 ## Setup
@@ -256,18 +256,20 @@ pnpm build           # typecheck every package
 
 `pnpm test:int` needs Postgres, which `pnpm demo:setup` starts; it uses its own database, so the demo data is untouched. CI runs all of them on every pull request.
 
+Paths are under `packages/api/src` unless they name another package.
+
 | Kind | Where | What it proves |
 |---|---|---|
 | Matcher | `packages/matcher`, unit | Each hard constraint and scorer; the case where filling slot by slot fails; a property test comparing the solver with brute force on small random inputs; the same input always gives the same result; the package imports nothing from the API |
 | Tenant isolation | `http/isolation.int.test.ts`, `http/tenant.int.test.ts`, `db/schema.int.test.ts` | A user of one organisation calls every route and finds nothing of the other: lists hold none of its rows, its references answer 404, and no response carries an internal id. A coverage test fails when a route is missing from that sweep. The database refuses a row that links to another organisation's row, and a refused request leaves no writes |
-| Lifecycle | `missions/lifecycle.int.test.ts`, `missions/approval.test.ts` | Every transition from every status by every role; nobody approves what they submitted; the approval policy with one and with two approvals required |
-| Double booking | `matching/clashes.int.test.ts`, `db/schema.int.test.ts` | Two transactions taking a hold on one crew member at once: exactly one succeeds. The booking rule holds in the database whatever the application does |
-| Proposals, clashes and holds | `matching/clashes.int.test.ts` | All seventeen scenarios of `DESIGN.md` section 10, numbered to match |
-| Seed | `db/seed.int.test.ts`, `matching/seed.int.test.ts` | The seed is sound, and the matcher gives the outcomes the walk-through relies on |
+| Lifecycle | `modules/missions/lifecycle.int.test.ts`, `modules/missions/approval.test.ts` | Every transition from every status by every role; nobody approves what they submitted; the approval policy with one and with two approvals required |
+| Double booking | `modules/matching/clashes.int.test.ts`, `db/schema.int.test.ts` | Two transactions taking a hold on one crew member at once: exactly one succeeds. The booking rule holds in the database whatever the application does |
+| Proposals, clashes and holds | `modules/matching/clashes.int.test.ts` | All seventeen scenarios of `DESIGN.md` section 10, numbered to match |
+| Seed | `db/seed.int.test.ts`, `modules/matching/seed.int.test.ts` | The seed is sound, and the matcher gives the outcomes the walk-through relies on |
 | API | the other `*.int.test.ts` under `packages/api` | Each endpoint against real Postgres: answers, refusals and their codes, and locks that hold, each tested by holding the lock |
 | CLI | `packages/cli`, unit and integration | Output formats, profiles and prompts; every command against the real API as a separate process, and `--json` gives only JSON |
-| End to end | `cli/walkthrough.int.test.ts`, `cli/readme.int.test.ts` | The three acts through `mctl`, asserting exit codes and `--json` answers; and this README's walk-through, run as written twice, after `pnpm demo:reset` each time |
-| Code rules | `architecture.test.ts`, `glossary.test.ts` | Modules reach the database only through the request's transaction, services and repositories import no HTTP, and status changes only through the lifecycle; the code uses no word `CONTEXT.md` avoids |
+| End to end | `packages/cli/src/walkthrough.int.test.ts`, `packages/cli/src/readme.int.test.ts` | The three acts through `mctl`, asserting exit codes and `--json` answers; and this README's walk-through, run as written twice, after `pnpm demo:reset` each time |
+| Code rules | `architecture.test.ts`, `glossary.test.ts`, `packages/matcher/src/architecture.test.ts` | Modules reach the database only through the request's transaction, services and repositories import no HTTP, and status changes only through the lifecycle; the code uses no word `CONTEXT.md` avoids |
 
 ## What is built
 

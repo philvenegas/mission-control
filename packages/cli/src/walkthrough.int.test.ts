@@ -1,6 +1,7 @@
 import { crewAssignmentSchema, crewMemberSchema, matchRunSchema, missionSchema } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { SEED_ORGS } from '../../api/src/db/seed-data.ts';
 import { json, useRunningApi } from './test/api.ts';
 import { logInEveryone } from './test/profiles.ts';
 
@@ -8,6 +9,8 @@ import { logInEveryone } from './test/profiles.ts';
 // Each test carries on from the one before.
 
 const api = useRunningApi();
+const HELIOS = SEED_ORGS.find(({ slug }) => slug === 'helios');
+if (!HELIOS) throw new Error('The seed has no Helios Labs.');
 let as: Awaited<ReturnType<typeof logInEveryone>>;
 beforeAll(async () => {
   as = await logInEveryone(api.url());
@@ -160,7 +163,7 @@ describe('act 3: another organisation sees nothing', () => {
     expect(missions.map(({ name, owner }) => `${name}, ${owner.name}`)).toEqual(['Solar Corona Probe, Farid Rahimi', 'Mercury Flyby, Farid Rahimi']);
     const crew = await json(as('farid', ['crew', 'list', '--json']), z.array(crewMemberSchema));
     expect(crew.flatMap(({ skills }) => skills.map(({ skill }) => skill))).toContain('field medicine');
-    expect(crew.map(({ name }) => name)).not.toContain('Ada Reyes');
+    expect(crew.map(({ name }) => name)).toEqual(HELIOS.crew.map(({ name }) => name));
   });
 
   it('cannot see another organisation\'s match run', async () => {
