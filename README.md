@@ -5,7 +5,7 @@ This README is completed in the last build step; until then it records how to se
 
 ## Setup
 
-Prerequisites: Docker, Node 22 and pnpm.
+Prerequisites: Docker, Node 22.18 or later, and pnpm.
 
 ```
 pnpm install
@@ -16,15 +16,18 @@ pnpm test:int        # integration tests, against a separate test database
 pnpm test:coverage   # both, with every file's uncovered lines
 pnpm lint            # lint, and find unused exports, files and dependencies
 pnpm demo:reset      # reseed
+export PATH="$PWD/bin:$PATH"   # makes `mctl` runnable; nothing is installed outside the repository
+pnpm demo:login      # six demo profiles: lead (current), director, ada, quin, mina, helios
+mctl status
 ```
 
 `make` lists the same commands as Makefile targets.
 
-Every seeded user has the password `mission-control-demo`. To log in:
+Every seeded user has the password `mission-control-demo`. To log in by hand:
 
 ```
-curl -s -X POST localhost:3000/v1/auth/login -H 'content-type: application/json' \
-  -d '{"org":"artemis","email":"dana@artemis.example","password":"mission-control-demo"}'
+mctl login --org artemis --email dana@artemis.example --profile director
+mctl whoami --profile director
 ```
 
 ## Where the build diverged from the design
@@ -86,3 +89,11 @@ Each entry is added when the divergence happens. `DESIGN.md` is not edited.
 - **The booking rule's refusal is `CREW_HELD` too.** When two requests take a hold on one crew member at once and the database's exclusion constraint refuses the second, the one error handler turns it into 409 rather than an internal error.
 - **The match endpoint needs no extra step to see clashes** (issue "Proposal check, clashes and holds"): the matcher is already given every assignment of every crew member, proposals on other drafts included, so it avoids a clash whenever a clash-free crew exists and flags one it cannot avoid.
 - **A decision that rests on what a crew member can do locks their row** (beyond design section 4, which locks only by status). Submitting a mission, placing crew in a slot by hand or from a run, adding an availability block, and changing a crew member's status or skills each lock the crew members involved, in id order, so a block added while a mission is submitted cannot leave a submitted mission over it. The booking rule covers only one live assignment against another; this covers the rest of the proposal check.
+- **`bin/mctl` runs the CLI's TypeScript source directly** (design section 9, "a wrapper that runs the built CLI"). Node strips the types itself from 22.18 on, so there is nothing to build and `bin/mctl` is one `node` command. The Node requirement rises from 22 to 22.18 for it.
+- **A login with no profile name is kept as `default`** (design section 8 leaves it open). `--profile`, then `MCTL_PROFILE`, names the profile a login is kept under, as they name the profile any other command acts as.
+- **Logging out keeps the profile and forgets its token.** Its organisation, email and API address stay, so `mctl profile list` shows it as logged out and any command acting as it prints the exact command to log back in.
+- **The acting-as line is printed by every command that acts as a profile,** login included, once it has logged in. `mctl status` and `mctl profile list` print it when a profile is in use; a command run with no profile has no line. The password prompt is written to the error stream too, so standard output stays clean.
+- **`mctl status` exits 1 when the API cannot be reached,** after reporting, so a script can wait on it. With `--json` it prints its own report (`api`, `reachable`, `profile`, `expires_at`), as do `mctl profile list`, `profile use` and `logout`, which call no API. No command ever prints a token, except `mctl login --json`, which prints the API's login answer as it came.
+- **A token the API no longer accepts** (its user removed, or the secret changed) exits 3 like an expired one, naming the profile and printing the command that logs it back in. An answer from the API that the CLI cannot read as the contract's exits 1, suggesting the two come from different versions.
+- **The CLI's integration tests run the API as a separate process** on the test database, seeded first, and drive `mctl` in-process against it, so the CLI is tested only through HTTP, as it runs. Two tests run `bin/mctl` and `pnpm demo:login` as real processes.
+

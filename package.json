@@ -4,12 +4,13 @@
   "type": "module",
   "packageManager": "pnpm@11.15.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "demo:setup": "bash scripts/demo-setup.sh",
     "api": "pnpm --silent --filter @mission-control/api start",
     "demo:reset": "pnpm --filter @mission-control/api db:seed",
+    "demo:login": "bash scripts/demo-login.sh",
     "build": "pnpm -r build",
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",

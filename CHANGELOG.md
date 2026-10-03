@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 6 are done. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 6 are done, and step 7 has begun. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
@@ -71,6 +71,11 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - An availability block over a held, offered or accepted assignment is refused (`CREW_HELD`), naming the mission only for offered and accepted ones; one over a proposal is accepted, and the draft shows the problem.
 - A second hold on a crew member over an overlapping period, refused by the database's booking rule, answers 409 (`CREW_HELD`).
 - Integration tests for all seventeen clash scenarios of `DESIGN.md` section 10, numbered to match, and for two requests taking a hold at the same moment.
+- The `cli` package and `bin/mctl`, which runs it from the repository: `mctl login`, `logout`, `whoami`, `status`, `profile list` and `profile use`. A login asks for the password with a hidden prompt, or reads it with `--password-stdin`; there is no `--password` flag.
+- Named profiles in `~/.config/mctl/config.json` (or `MCTL_CONFIG`), readable only by the user; the first login becomes current, and `--profile` or `MCTL_PROFILE` overrides it for one command.
+- Every command prints who it acts as on the error stream, `--json` prints the API's answer as it came, colour is used only on a terminal, and errors print the API's message and hint with the exit codes of `DESIGN.md` section 8. An expired login prints the exact command to log back in; an API that cannot be reached is named, with the command that starts it.
+- `pnpm demo:login`: the six demo profiles, with `lead` current.
+- Node 22.18 or later, which runs the CLI's TypeScript without a build.
 
 ### Fixed
 

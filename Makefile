@@ -2,7 +2,7 @@
 # Each target wraps a pnpm script or a Docker command, so either form works.
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup reset api build lint check test test-int test-all test-watch coverage \
+.PHONY: help install setup reset login api build lint check test test-int test-all test-watch coverage \
         db-up db-down db-logs db-migrate db-generate db-seed db-psql db-destroy
 
 API := pnpm --silent --filter @mission-control/api
@@ -25,6 +25,9 @@ setup: ## Start Postgres, create roles and databases, migrate, seed and build (s
 
 reset: ## Wipe and reseed the demo data
 	pnpm demo:reset
+
+login: ## Log in as the six demo users, one mctl profile each, with lead current (needs the API up)
+	pnpm demo:login
 
 api: ## Run the API (http://localhost:3000 unless PORT in .env says otherwise)
 	pnpm api

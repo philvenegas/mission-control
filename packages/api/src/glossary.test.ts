@@ -56,6 +56,8 @@ const AMBIGUOUS: Record<string, string> = {
   removed: 'a user or record deleted; avoided only for a released assignment',
   fit: 'not used, but too common a word to police',
   force: 'not used, but too common a word to police',
+  option: 'a command-line option, as Commander names it',
+  action: 'a Commander action handler',
 };
 
 /** Where the design itself fixes a name that contains an avoided word (CODING_STANDARDS.md, "Names"). */
@@ -66,6 +68,9 @@ const MEANT_IN: Record<string, { word: string; why: string }> = {
   'packages/api/src/modules/missions/approval.ts': { word: 'pending', why: 'approvalState → pending | approved, as DESIGN.md section 4 names it' },
   'packages/api/src/modules/missions/approval.test.ts': { word: 'pending', why: 'the same' },
   'packages/api/src/db/schema.int.test.ts': { word: 'pending', why: 'a status the database must refuse' },
+  'packages/cli/src/profiles.test.ts': { word: 'lead', why: 'the demo profile `lead`, which DESIGN.md section 8 names' },
+  'packages/cli/src/cli.int.test.ts': { word: 'lead', why: 'the same' },
+  'packages/cli/src/bin.int.test.ts': { word: 'lead', why: 'the same' },
 };
 
 /** Each avoided word or phrase, as words, with the term it is avoided for. */
