@@ -1,7 +1,15 @@
 import { parseRef } from '@mission-control/contract';
-import { type Exclusion, exclusionsOf, HARD_CONSTRAINTS, type MatchedMission } from './constraints.ts';
-import { overlaps } from './dates.ts';
-import type { CrewInput, MatchInput, MissionSummary, RequirementInput, Slot } from './input.ts';
+import { type ConstraintFailure, failuresOf, HARD_CONSTRAINTS } from './constraints.ts';
+import {
+  assignmentsElsewhere,
+  type Consideration,
+  type CrewInput,
+  type MatchedMission,
+  type MatchInput,
+  type MissionSummary,
+  type RequirementInput,
+  type Slot,
+} from './input.ts';
 import { type Score, scoreCandidate } from './scorers.ts';
 import { solveAssignment } from './solver.ts';
 
@@ -26,12 +34,12 @@ export interface Alternate {
 }
 
 /** Why a crew member was lost to a slot: the first constraint they failed, or that they were needed elsewhere. */
-export type LossReason = Exclude<Exclusion['constraint'], 'skill'> | 'no_skill' | 'below_level' | 'chosen_for_another_slot';
+export type LossReason = Exclude<ConstraintFailure['constraint'], 'skill'> | 'no_skill' | 'below_level' | 'chosen_for_another_slot';
 
 export interface NearestMiss {
   crewMember: CrewMemberSummary;
   /** Everything they lack for the slot. */
-  exclusions: Exclusion[];
+  failures: ConstraintFailure[];
 }
 
 export interface SlotResult {
@@ -43,16 +51,16 @@ export interface SlotResult {
   unfilled: { lostTo: { reason: LossReason; count: number }[]; nearestMisses: NearestMiss[] } | null;
 }
 
-export interface ExcludedCrewMember {
+export interface RuledOutCrewMember {
   crewMember: CrewMemberSummary;
   skill: string;
-  exclusions: Exclusion[];
+  failures: ConstraintFailure[];
 }
 
 export interface MatchOutput {
   slots: SlotResult[];
-  /** Crew who hold a required skill but are not candidates for it, with why. */
-  excluded: ExcludedCrewMember[];
+  /** Crew who hold the skill an open slot needs but are not candidates for it, with why. */
+  ruledOut: RuledOutCrewMember[];
   summary: { slots: number; alreadyFilled: number; open: number; filled: number; clashes: number };
 }
 
@@ -79,33 +87,31 @@ const openSlots = (requirements: readonly RequirementInput[]): Slot[] =>
     Array.from({ length: Math.max(0, headcount - filled) }, (_, index) => ({ skill, minLevel, number: filled + index + 1, headcount })),
   );
 
-/** The other drafts over this period that propose the crew member: each a clash if they are chosen. */
+/**
+ * The other drafts over this period that propose the crew member: each a clash if they are chosen.
+ * Only drafts clash: on a mission past draft, a proposal elsewhere is the other mission's problem.
+ */
 const clashesOf = (crew: CrewInput, mission: MatchedMission): MissionSummary[] =>
-  crew.assignments
-    .filter((assignment) => assignment.status === 'proposed' && assignment.mission.ref !== mission.ref && overlaps(assignment.period, mission.period))
-    .map((assignment) => assignment.mission);
+  mission.status === 'draft' ? assignmentsElsewhere(crew, mission, ['proposed']).map((assignment) => assignment.mission) : [];
 
-const lossReason = ([first]: Exclusion[]): LossReason => {
+const lossReason = ([first]: ConstraintFailure[]): LossReason => {
   if (!first) return 'chosen_for_another_slot';
   if (first.constraint !== 'skill') return first.constraint;
   return first.level === null ? 'no_skill' : 'below_level';
 };
 
 /** How many levels short of the slot a crew member who holds its skill is; none when they meet it. */
-const levelsShort = (exclusions: Exclusion[]) =>
-  exclusions.reduce(
-    (short, exclusion) => (exclusion.constraint === 'skill' && exclusion.level !== null ? exclusion.minLevel - exclusion.level : short),
-    0,
-  );
+const levelsShort = (failures: ConstraintFailure[]) =>
+  failures.reduce((short, failure) => (failure.constraint === 'skill' && failure.level !== null ? failure.minLevel - failure.level : short), 0);
 
 /** Whether a crew member holds the slot's skill at some level: a near miss, rather than a stranger to it. */
-const holdsTheSkill = (exclusions: Exclusion[]) => !exclusions.some((exclusion) => exclusion.constraint === 'skill' && exclusion.level === null);
+const holdsTheSkill = (failures: ConstraintFailure[]) => !failures.some((failure) => failure.constraint === 'skill' && failure.level === null);
 
-/** One crew member against one slot: why they are not a candidate, or their score. */
+/** One crew member considered for one slot: why they are not a candidate, or their score. */
 interface Pairing {
   crew: CrewInput;
   column: number;
-  exclusions: Exclusion[];
+  failures: ConstraintFailure[];
   score: Score | null;
   clashes: MissionSummary[];
 }
@@ -120,7 +126,7 @@ const isCandidate = (pairing: Pairing): pairing is CandidatePairing => pairing.s
  * then with as few clashes as possible, then with the best total score.
  */
 export function match(input: MatchInput): MatchOutput {
-  const mission: MatchedMission = input.mission;
+  const { mission } = input;
   // By skill name, compared as plain text so that no locale can change the order.
   const requirements = [...input.requirements].sort((a, b) => Number(a.skill > b.skill) - Number(a.skill < b.skill));
   const crew = input.crew
@@ -132,12 +138,13 @@ export function match(input: MatchInput): MatchOutput {
   const rows = slots.map((slot) => ({
     slot,
     pairings: crew.map((crewMember, column): Pairing => {
-      const exclusions = exclusionsOf(crewMember, slot, mission);
+      const consideration: Consideration = { crew: crewMember, need: slot, mission };
+      const failures = failuresOf(consideration);
       return {
         crew: crewMember,
         column,
-        exclusions,
-        score: exclusions.length === 0 ? scoreCandidate(crewMember, slot, mission, input.weights) : null,
+        failures,
+        score: failures.length === 0 ? scoreCandidate(consideration, input.weights) : null,
         clashes: clashesOf(crewMember, mission),
       };
     }),
@@ -180,30 +187,28 @@ export function match(input: MatchInput): MatchOutput {
   const slotResults = orderWithinRequirements(results);
   return {
     slots: slotResults,
-    excluded: excludedWithSkill(requirements, crew, mission),
+    ruledOut: ruledOutWithSkill(requirements.filter((requirement) => requirement.filled < requirement.headcount), crew, mission),
     summary: {
       slots: requirements.reduce((sum, requirement) => sum + requirement.headcount, 0),
       alreadyFilled: requirements.reduce((sum, requirement) => sum + Math.min(requirement.filled, requirement.headcount), 0),
       open: slots.length,
       filled: slotResults.filter((result) => result.chosen).length,
-      clashes: slotResults.filter((result) => (result.chosen?.clashes.length ?? 0) > 0).length,
+      clashes: slotResults.filter((result) => result.chosen !== null && result.chosen.clashes.length > 0).length,
     },
   };
 }
 
 function explainUnfilled(pairings: Pairing[]): NonNullable<SlotResult['unfilled']> {
-  const lost = pairings.map((pairing) => lossReason(pairing.exclusions));
+  const lost = pairings.map((pairing) => lossReason(pairing.failures));
   const lostTo = LOSS_ORDER.map((reason) => ({ reason, count: lost.filter((each) => each === reason).length })).filter(({ count }) => count > 0);
   // Those who hold the skill, fewest failures first, then the fewest levels short.
   const nearestMisses = pairings
-    .filter((pairing) => pairing.exclusions.length > 0 && holdsTheSkill(pairing.exclusions))
-    .sort((a, b) => a.exclusions.length - b.exclusions.length || levelsShort(a.exclusions) - levelsShort(b.exclusions) || a.column - b.column)
+    .filter((pairing) => pairing.failures.length > 0 && holdsTheSkill(pairing.failures))
+    .sort((a, b) => a.failures.length - b.failures.length || levelsShort(a.failures) - levelsShort(b.failures) || a.column - b.column)
     .slice(0, MAX_NEAREST_MISSES)
-    .map((pairing) => ({ crewMember: summarise(pairing.crew), exclusions: pairing.exclusions }));
+    .map((pairing) => ({ crewMember: summarise(pairing.crew), failures: pairing.failures }));
   return { lostTo, nearestMisses };
 }
-
-const filledScore = (result: SlotResult) => (result.chosen ? result.chosen.score.total : -1);
 
 /** Slots of one requirement are interchangeable: filled ones first, best score first, numbered in that order. */
 function orderWithinRequirements(results: SlotResult[]): SlotResult[] {
@@ -211,21 +216,27 @@ function orderWithinRequirements(results: SlotResult[]): SlotResult[] {
   for (const result of results) bySkill.set(result.slot.skill, [...(bySkill.get(result.slot.skill) ?? []), result]);
   return [...bySkill.values()].flatMap((group) => {
     const firstNumber = Math.min(...group.map((result) => result.slot.number));
-    return [...group]
-      .sort((a, b) => filledScore(b) - filledScore(a))
-      .map((result, index) => ({ ...result, slot: { ...result.slot, number: firstNumber + index } }));
+    const filled = group
+      .flatMap((result) => (result.chosen ? [{ result, total: result.chosen.score.total }] : []))
+      .sort((a, b) => b.total - a.total)
+      .map(({ result }) => result);
+    const unfilled = group.filter((result) => !result.chosen);
+    return [...filled, ...unfilled].map((result, index) => ({ ...result, slot: { ...result.slot, number: firstNumber + index } }));
   });
 }
 
-/** Crew who hold a required skill but are not candidates for it, once per crew member and skill. */
-function excludedWithSkill(requirements: RequirementInput[], crew: CrewInput[], mission: MatchedMission): ExcludedCrewMember[] {
+/**
+ * Crew who hold the skill an open slot needs but are not candidates for it, once per crew member and
+ * skill. Crew already in one of the mission's slots are placed, not ruled out, so they are left off.
+ */
+function ruledOutWithSkill(openRequirements: RequirementInput[], crew: CrewInput[], mission: MatchedMission): RuledOutCrewMember[] {
   return crew.flatMap((crewMember) =>
-    requirements
+    openRequirements
       .filter((requirement) => crewMember.skills.some((held) => held.skill === requirement.skill))
       .flatMap((requirement) => {
-        const slot = { skill: requirement.skill, minLevel: requirement.minLevel, number: 1, headcount: requirement.headcount };
-        const exclusions = exclusionsOf(crewMember, slot, mission);
-        return exclusions.length > 0 ? [{ crewMember: summarise(crewMember), skill: requirement.skill, exclusions }] : [];
+        const failures = failuresOf({ crew: crewMember, need: requirement, mission });
+        const placed = failures.some((failure) => failure.constraint === 'not_on_mission');
+        return failures.length > 0 && !placed ? [{ crewMember: summarise(crewMember), skill: requirement.skill, failures }] : [];
       }),
   );
 }

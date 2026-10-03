@@ -56,6 +56,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - A glossary test reads the words `CONTEXT.md` says to avoid and finds any in the source, tests and comments included.
 - The `matcher` package: `match(input)` proposes crew for a mission's open slots, a pure function that imports nothing from the API. Seven hard constraints, each recording why it failed; proficiency, workload and rest scorers weighted by the organisation's settings; a hand-written Hungarian solver over whole-number costs that fills the most slots, then makes the fewest clashes, then gets the best total score. The output gives each slot's choice with its score breakdown, up to three alternates, the reasons a slot went unfilled with its two nearest misses, any clash it could not avoid, and crew with a required skill who were left out.
 - Match weights must not be negative, and must not all be zero.
+- `PLACED_ASSIGNMENT_STATUSES` and `isLiveStatus` in the contract, for the statuses that put a crew member in a slot and those that hold them.
 - `test/arrange.ts`: one way for tests to arrange missions and crew the API cannot yet create, taking references from the organisation's counters.
 
 ### Fixed

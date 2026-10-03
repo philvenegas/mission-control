@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import type { AssignmentInput, CrewInput, MatchInput, RequirementInput } from './input.ts';
 import { match } from './match.ts';
 
-const EUROPA = { ref: 'MSN-8', period: { from: '2027-03-01', to: '2027-03-20' } };
+const EUROPA = { ref: 'MSN-8', status: 'draft' as const, period: { from: '2027-03-01', to: '2027-03-20' } };
 
 let nextCrewNumber = 1;
 /** A crew member with the given skills (name to level), free and rested unless changed. */
@@ -50,6 +50,13 @@ describe('choosing a crew', () => {
     expect(result.summary).toMatchObject({ clashes: 1 });
   });
 
+  it('sees no clash on a mission past draft: a proposal elsewhere is then the other draft\'s problem', () => {
+    const ada = crewMember('Ada Reyes', { pilot: 5 }, { assignments: [proposedOnCeres] });
+    const ben = crewMember('Ben Osei', { pilot: 3 });
+    const refill = { ...input([requirement('pilot', 3)], [ada, ben]), mission: { ...EUROPA, status: 'approved' as const } };
+    expect(match(refill).slots[0]?.chosen).toMatchObject({ crewMember: { name: 'Ada Reyes' }, clashes: [] });
+  });
+
   it('prefers more slots filled over fewer clashes', () => {
     const ada = crewMember('Ada Reyes', { pilot: 5, medic: 4 }, { assignments: [proposedOnCeres] });
     const ben = crewMember('Ben Osei', { pilot: 4 });
@@ -94,8 +101,8 @@ describe('explaining the choice', () => {
         { reason: 'chosen_for_another_slot', count: 1 },
       ],
       nearestMisses: [
-        { crewMember: { ref: tala.ref, name: 'Tala Moreno' }, exclusions: [{ constraint: 'availability', block: onLeave }] },
-        { crewMember: { ref: sven.ref, name: 'Sven Dahl' }, exclusions: [{ constraint: 'skill', level: 3, minLevel: 4 }] },
+        { crewMember: { ref: tala.ref, name: 'Tala Moreno' }, failures: [{ constraint: 'availability', block: onLeave }] },
+        { crewMember: { ref: sven.ref, name: 'Sven Dahl' }, failures: [{ constraint: 'skill', level: 3, minLevel: 4 }] },
       ],
     });
     expect(result.summary).toMatchObject({ open: 2, filled: 1 });
@@ -115,14 +122,25 @@ describe('explaining the choice', () => {
     const noor = crewMember('Noor Haddad', { medic: 3 }, { skills: [{ skill: 'medic', level: 3, certifiedUntil: '2027-03-10' }] });
     const quin = crewMember('Quin Abara', { medic: 3 });
     const ben = crewMember('Ben Osei', { pilot: 4 });
-    expect(match(input([requirement('medic', 3)], [omar, noor, quin, ben])).excluded).toEqual([
-      { crewMember: { ref: omar.ref, name: 'Omar Vance' }, skill: 'medic', exclusions: [{ constraint: 'availability', block: onLeave }] },
+    expect(match(input([requirement('medic', 3)], [omar, noor, quin, ben])).ruledOut).toEqual([
+      { crewMember: { ref: omar.ref, name: 'Omar Vance' }, skill: 'medic', failures: [{ constraint: 'availability', block: onLeave }] },
       {
         crewMember: { ref: noor.ref, name: 'Noor Haddad' },
         skill: 'medic',
-        exclusions: [{ constraint: 'certification', certifiedUntil: '2027-03-10', lastDay: '2027-03-19' }],
+        failures: [{ constraint: 'certification', certifiedUntil: '2027-03-10', lastDay: '2027-03-19' }],
       },
     ]);
+  });
+});
+
+describe('crew ruled out', () => {
+  it('leaves off crew already placed on the mission, and requirements with no open slot', () => {
+    const onEuropa = { ...proposedOnCeres, mission: { ...CERES, ref: EUROPA.ref, name: 'Europa Survey' }, period: EUROPA.period };
+    const placed = crewMember('Kira Novak', { engineer: 5 }, { assignments: [onEuropa] });
+    const away = crewMember('Leo Adeyemi', { engineer: 4 }, { availabilityBlocks: [onLeave] });
+    const awayPilot = crewMember('Cy Lindqvist', { pilot: 4 }, { availabilityBlocks: [onLeave] });
+    const output = match(input([requirement('engineer', 4, 2, 1), requirement('pilot', 3, 1, 1)], [placed, away, awayPilot]));
+    expect(output.ruledOut.map(({ crewMember: { name }, skill }) => `${name} (${skill})`)).toEqual(['Leo Adeyemi (engineer)']);
   });
 });
 

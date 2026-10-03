@@ -23,6 +23,10 @@ export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 
 /** A live assignment holds its crew member for its period. */
 export const LIVE_ASSIGNMENT_STATUSES = ['held', 'offered', 'accepted'] as const satisfies readonly AssignmentStatus[];
+export const isLiveStatus = (status: AssignmentStatus) => LIVE_ASSIGNMENT_STATUSES.some((live) => live === status);
+
+/** An assignment that puts a crew member in a slot: proposed on a draft, or live. A declined or released one does not. */
+export const PLACED_ASSIGNMENT_STATUSES = ['proposed', ...LIVE_ASSIGNMENT_STATUSES] as const satisfies readonly AssignmentStatus[];
 
 /**
  * A crew member sees a mission once they are offered a place on it, and while they hold it. A held

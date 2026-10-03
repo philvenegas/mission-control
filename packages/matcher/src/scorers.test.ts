@@ -5,7 +5,7 @@ import type { CrewInput, Slot } from './input.ts';
 import { SCORERS, scoreCandidate } from './scorers.ts';
 
 const START = '2027-03-01';
-const MISSION = { ref: 'MSN-8', period: { from: START, to: '2027-03-20' } };
+const MISSION = { ref: 'MSN-8', status: 'draft' as const, period: { from: START, to: '2027-03-20' } };
 
 /** A period of `days` days that ends `daysBeforeStart` days before the mission starts. */
 const before = (days: number, daysBeforeStart: number): Period => ({
@@ -33,11 +33,12 @@ const slot = (skill: string, minLevel: number): Slot => ({ skill, minLevel, numb
 const componentOf = (name: string, candidate: CrewInput, required: Slot) => {
   const scorer = SCORERS.find((entry) => entry.name === name);
   if (!scorer) throw new Error(`No scorer named ${name}`);
-  return scorer.score({ crew: candidate, slot: required, mission: MISSION });
+  return scorer.score({ crew: candidate, need: required, mission: MISSION });
 };
 
 /** The score as a person reads it, out of 100. */
-const points = (candidate: CrewInput, required: Slot) => Math.round(scoreCandidate(candidate, required, MISSION, DEFAULT_MATCH_WEIGHTS).total * 100);
+const points = (candidate: CrewInput, required: Slot) =>
+  Math.round(scoreCandidate({ crew: candidate, need: required, mission: MISSION }, DEFAULT_MATCH_WEIGHTS).total * 100);
 
 describe('the scorers of DESIGN.md section 6.4', () => {
   it('scores proficiency as 60% for meeting the bar and 10 points for each level above it', () => {
@@ -76,7 +77,7 @@ describe('the scorers of DESIGN.md section 6.4', () => {
   });
 
   it('weighs the components by the weights given, and gives each one\'s points', () => {
-    const scored = scoreCandidate(crew('pilot', 5, [before(45, 10)]), slot('pilot', 3), MISSION, { proficiency: 0.5, workload: 0.5, rest: 0 });
+    const scored = scoreCandidate({ crew: crew('pilot', 5, [before(45, 10)]), need: slot('pilot', 3), mission: MISSION }, { proficiency: 0.5, workload: 0.5, rest: 0 });
     expect(scored.total).toBeCloseTo(0.5 * 0.8 + 0.5 * 0.75);
     expect(scored.components.map(({ name, weight }) => [name, weight])).toEqual([
       ['proficiency', 0.5],

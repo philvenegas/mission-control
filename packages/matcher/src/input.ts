@@ -1,4 +1,5 @@
 import type { AssignmentStatus, CrewStatus, MatchWeights, MissionStatus, Period } from '@mission-control/contract';
+import { overlaps } from './dates.ts';
 
 // What the matcher is given (DESIGN.md section 6): everything it needs to decide, gathered by the
 // API beforehand, so the matcher itself reads nothing.
@@ -49,18 +50,45 @@ export interface RequirementInput {
   filled: number;
 }
 
+/** The mission being matched. Its status decides whether a proposal elsewhere is a clash: only between drafts. */
+export interface MatchedMission {
+  ref: string;
+  status: MissionStatus;
+  period: Period;
+}
+
 export interface MatchInput {
-  mission: { ref: string; period: Period };
+  mission: MatchedMission;
   requirements: RequirementInput[];
   crew: CrewInput[];
   weights: MatchWeights;
 }
 
-/** One open slot: one unit of a requirement's headcount. */
-export interface Slot {
+/** What a slot asks of whoever fills it. */
+interface SkillNeed {
   skill: string;
   minLevel: number;
+}
+
+/** One open slot: one unit of a requirement's headcount. */
+export interface Slot extends SkillNeed {
   /** Which of the requirement's slots this is, from 1. */
   number: number;
   headcount: number;
 }
+
+/** One crew member considered for one slot of the mission: what a hard constraint checks and a scorer scores. */
+export interface Consideration {
+  crew: CrewInput;
+  need: SkillNeed;
+  mission: MatchedMission;
+}
+
+/** The crew member's record of a skill, if they hold it. */
+export const skillRecord = (crew: CrewInput, skill: string) => crew.skills.find((held) => held.skill === skill);
+
+/** The crew member's assignments on missions other than this one, over its period, with one of the statuses. */
+export const assignmentsElsewhere = (crew: CrewInput, mission: MatchedMission, statuses: readonly AssignmentStatus[]) =>
+  crew.assignments.filter(
+    (assignment) => assignment.mission.ref !== mission.ref && statuses.includes(assignment.status) && overlaps(assignment.period, mission.period),
+  );

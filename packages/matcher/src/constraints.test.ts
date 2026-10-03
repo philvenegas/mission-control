@@ -1,8 +1,9 @@
+import { ASSIGNMENT_STATUSES, isLiveStatus, LIVE_ASSIGNMENT_STATUSES } from '@mission-control/contract';
 import { describe, expect, it } from 'vitest';
-import { exclusionsOf, HARD_CONSTRAINTS } from './constraints.ts';
+import { failuresOf, HARD_CONSTRAINTS } from './constraints.ts';
 import type { AssignmentInput, CrewInput, Slot } from './input.ts';
 
-const EUROPA = { ref: 'MSN-8', period: { from: '2027-03-01', to: '2027-03-20' } };
+const EUROPA = { ref: 'MSN-8', status: 'draft' as const, period: { from: '2027-03-01', to: '2027-03-20' } };
 const PILOT: Slot = { skill: 'pilot', minLevel: 3, number: 1, headcount: 1 };
 
 const ada = (changes: Partial<CrewInput> = {}): CrewInput => ({
@@ -23,7 +24,7 @@ const assignment = (changes: Partial<AssignmentInput>): AssignmentInput => ({
   ...changes,
 });
 
-const reasons = (crew: CrewInput, slot = PILOT) => exclusionsOf(crew, slot, EUROPA);
+const reasons = (crew: CrewInput, need = PILOT) => failuresOf({ crew, need, mission: EUROPA });
 
 describe('the hard constraints of DESIGN.md section 6.2', () => {
   it('passes a crew member who meets every one, recording nothing', () => {
@@ -61,11 +62,11 @@ describe('the hard constraints of DESIGN.md section 6.2', () => {
   });
 
   it('5. leaves out a crew member held, offered or accepted on another mission over the period, but not one only proposed', () => {
-    for (const status of ['held', 'offered', 'accepted'] as const) {
+    for (const status of LIVE_ASSIGNMENT_STATUSES) {
       const live = assignment({ status });
       expect(reasons(ada({ assignments: [live] }))).toEqual([{ constraint: 'free', assignment: live }]);
     }
-    for (const status of ['proposed', 'declined', 'released'] as const) {
+    for (const status of ASSIGNMENT_STATUSES.filter((each) => !isLiveStatus(each))) {
       expect(reasons(ada({ assignments: [assignment({ status })] }))).toEqual([]);
     }
     expect(reasons(ada({ assignments: [assignment({ period: { from: '2027-04-01', to: '2027-04-10' } })] }))).toEqual([]);

@@ -1,19 +1,11 @@
-import { LIVE_ASSIGNMENT_STATUSES, type MatchWeights } from '@mission-control/contract';
-import type { MatchedMission } from './constraints.ts';
+import { isLiveStatus, type MatchWeights } from '@mission-control/contract';
 import { addDays, daysBetween, sharedDays } from './dates.ts';
-import type { CrewInput, Slot } from './input.ts';
-
-/** What a scorer looks at: a candidate who has passed every hard constraint, for one slot. */
-interface ScoringContext {
-  crew: CrewInput;
-  slot: Slot;
-  mission: MatchedMission;
-}
+import type { Consideration, CrewInput } from './input.ts';
 
 /** One component of a score: a pure function giving 0 to 1, weighted by the organisation's setting of the same name. */
-export interface Scorer {
+interface Scorer {
   name: keyof MatchWeights;
-  score: (context: ScoringContext) => number;
+  score: (consideration: Consideration) => number;
 }
 
 /** How far either side of the mission's start workload is counted. */
@@ -22,18 +14,17 @@ const WORKLOAD_WINDOW_DAYS = 90;
 const FULL_REST_DAYS = 30;
 
 /** The crew member's assignments that hold them: held, offered or accepted, on any mission. */
-const liveAssignments = (crew: CrewInput) =>
-  crew.assignments.filter((assignment) => LIVE_ASSIGNMENT_STATUSES.some((status) => status === assignment.status));
+const liveAssignments = (crew: CrewInput) => crew.assignments.filter((assignment) => isLiveStatus(assignment.status));
 
 /** DESIGN.md section 6.4. Adding a component means adding one entry here, and a weight. */
 export const SCORERS: readonly Scorer[] = [
   {
-    // Meeting the bar earns 60%; each level above it adds 10 points.
+    // Meeting the bar earns 60%; each level above it adds 10 points. A candidate holds the skill at
+    // the bar or above, so nobody is scored below it.
     name: 'proficiency',
-    score: ({ crew, slot }) => {
-      // A candidate holds the skill at the bar or above; nobody scores below the bar.
-      const level = Math.max(slot.minLevel, ...crew.skills.filter((held) => held.skill === slot.skill).map((held) => held.level));
-      return 0.6 + 0.1 * (level - slot.minLevel);
+    score: ({ crew, need }) => {
+      const level = Math.max(need.minLevel, ...crew.skills.filter((held) => held.skill === need.skill).map((held) => held.level));
+      return 0.6 + 0.1 * (level - need.minLevel);
     },
   },
   {
@@ -77,10 +68,10 @@ export interface Score {
  * A candidate's score for a slot: each component's value times its weight. The weights are taken as
  * shares of their sum, so a score is always between 0 and 1 whatever scale the organisation set.
  */
-export function scoreCandidate(crew: CrewInput, slot: Slot, mission: MatchedMission, weights: MatchWeights): Score {
+export function scoreCandidate(consideration: Consideration, weights: MatchWeights): Score {
   const weightSum = SCORERS.reduce((sum, scorer) => sum + weights[scorer.name], 0);
   const components = SCORERS.map((scorer) => {
-    const value = scorer.score({ crew, slot, mission });
+    const value = scorer.score(consideration);
     const weight = weights[scorer.name] / weightSum;
     return { name: scorer.name, value, weight, points: value * weight };
   });

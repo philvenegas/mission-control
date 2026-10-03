@@ -4,8 +4,10 @@ import {
   CREW_VISIBLE_ASSIGNMENT_STATUSES,
   DEFAULT_MATCH_WEIGHTS,
   DEFAULT_ORG_SETTINGS,
+  isLiveStatus,
   LIVE_ASSIGNMENT_STATUSES,
   matchWeightsSchema,
+  PLACED_ASSIGNMENT_STATUSES,
   MISSION_EVENT_TYPES,
   TRANSITIONS,
 } from './domain.ts';
@@ -19,6 +21,11 @@ describe('the shared domain values', () => {
       'declined',
       'released',
     ]);
+  });
+
+  it('places a crew member in a slot by a proposal or a live assignment, and not once declined or released', () => {
+    expect(PLACED_ASSIGNMENT_STATUSES).toEqual(['proposed', 'held', 'offered', 'accepted']);
+    expect(ASSIGNMENT_STATUSES.filter(isLiveStatus)).toEqual(['held', 'offered', 'accepted']);
   });
 
   it('shows a crew member a mission once they are offered a place, never while they are only held', () => {
