@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 6 are done, and step 7 has begun. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 7 are done. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
@@ -78,6 +78,12 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - Node 22.18 or later, which runs the CLI's TypeScript without a build.
 - `pnpm lint` runs the glossary test, so a word `CONTEXT.md` avoids fails the first lint. A file may now be excused more than one avoided word.
 - `test/locks.ts`: `waitsForRowLock` holds a record's row lock from a test and reports whether a request waits on it. `CODING_STANDARDS.md` asks that a test of a lock fail without the lock.
+- Every primary workflow from `mctl`, in the walk-through's order: `mission create|list|show|require|unrequire|submit|approve|reject|launch|complete|cancel|history`; `match run|show|apply`; `assignment list|add|remove|clear|accept|decline`; `crew list|show|add`, `crew skill set`; `availability add|list|remove`; `skill list`; `org show`.
+- `mctl match run` and `match show` print the match run as `DESIGN.md` section 8 lays it out: the verdict first, a block per slot with each score component's points in words, the alternates, an unfilled slot's losses, nearest misses and the commands that would fill it, any clash, up to five crew excluded with the skill, and a footer naming the run and the next commands. `--apply` applies the run straight after.
+- `mctl match apply` asks before applying a run that makes a clash, naming it, unless `--yes` is given. `mission cancel`, `assignment remove`, `assignment clear` and `availability remove` ask first too; without a terminal to ask on they refuse unless given `--yes`.
+- `mctl mission show` prints a line per slot, with the crew member, score, status, who chose them and any problem, and who has approved; `mission list` marks every clash; `mission approve` reports progress while more approvals are needed. A successful change prints the likely next command.
+- A score component in a match run now says what it was worked out from: the level held, the days assigned out of the 180 around the start, or the days rested (null for one who has never flown). A nearest miss gives the level they hold the skill at.
+- Integration tests that run the three acts of the walk-through through `mctl`, and check that every command answers with only JSON under `--json`, finding the commands from `mctl`'s own help.
 
 ### Fixed
 
@@ -86,5 +92,9 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - A stored password hash cut short is now covered by a test.
 - Listing crew skills no longer special-cases an empty list of crew; the query handles it.
 - Names the glossary avoids, in tests: `member` for a crew member, `otherLead` for another mission lead.
+
+### Changed
+
+- Coverage thresholds rise to the level now reached: statements and lines 98%, branches 98.5%.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

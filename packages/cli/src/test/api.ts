@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { afterAll, beforeAll } from 'vitest';
+import { afterAll, beforeAll, expect } from 'vitest';
+import type { z } from 'zod';
 // Loads .env, as the API does.
 import { requireEnv } from '../../../api/src/env.ts';
 import type { Io } from '../context.ts';
@@ -84,4 +85,11 @@ export async function mctl(args: string[], env: Record<string, string | undefine
     home: scratch(),
   });
   return { code, stdout, stderr };
+}
+
+/** The --json answer of a command that succeeded, read with its contract schema. */
+export async function json<Schema extends z.ZodType>(ran: Promise<Ran>, schema: Schema): Promise<z.infer<Schema>> {
+  const { code, stdout } = await ran;
+  expect(code).toBe(0);
+  return schema.parse(JSON.parse(stdout));
 }

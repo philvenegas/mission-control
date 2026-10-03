@@ -21,14 +21,20 @@ export function printActingAs(context: Context, profile: Profile) {
   context.io.stderr.write(`${paint(context.io.stderr, context.io.env)('dim', `as ${describeLogin(profile)}`)}\n`);
 }
 
-/** A command's answer: as the API sent it with `--json`, else lines for a person. */
-export function printAnswer(context: Context, raw: unknown, lines: string[]) {
-  context.io.stdout.write(context.json ? `${JSON.stringify(raw, null, 2)}\n` : lines.map((line) => `${line}\n`).join(''));
+/** Lines for a person, on standard output. */
+export function printLines(context: Context, lines: string[]) {
+  context.io.stdout.write(lines.map((line) => `${line}\n`).join(''));
 }
 
-/** The likely next command, for a person; nothing with `--json`. */
-export function printNext(context: Context, command: string) {
-  if (!context.json) context.io.stdout.write(`${paint(context.io.stdout, context.io.env)('dim', `Next: ${command}`)}\n`);
+/** A command's answer: as the API sent it with `--json`, else lines for a person. */
+export function printAnswer(context: Context, raw: unknown, lines: string[]) {
+  if (context.json) context.io.stdout.write(`${JSON.stringify(raw, null, 2)}\n`);
+  else printLines(context, lines);
+}
+
+/** The likely next command, for a person, naming who runs it when that is someone else; nothing with `--json`. */
+export function printNext(context: Context, command: string, who?: string) {
+  if (!context.json) context.io.stdout.write(`${paint(context.io.stdout, context.io.env)('dim', `Next${who ? ` (${who})` : ''}: ${command}`)}\n`);
 }
 
 export function printError(io: Io, error: CliError) {

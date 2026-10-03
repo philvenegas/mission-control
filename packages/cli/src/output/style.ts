@@ -7,6 +7,7 @@ export interface Output {
 }
 
 const STYLES = {
+  bold: ['\u001b[1m', '\u001b[22m'],
   dim: ['\u001b[2m', '\u001b[22m'],
   red: ['\u001b[31m', '\u001b[39m'],
   green: ['\u001b[32m', '\u001b[39m'],
@@ -14,8 +15,11 @@ const STYLES = {
 } as const;
 type Style = keyof typeof STYLES;
 
+/** Styles text: in colour, or plain. */
+export type Paint = (style: Style, text: string) => string;
+
 /** Styles text for a stream: in colour for a terminal, plain otherwise or when NO_COLOR is set. */
-export function paint(stream: Pick<Output, 'isTTY'>, env: Record<string, string | undefined>) {
+export function paint(stream: Pick<Output, 'isTTY'>, env: Record<string, string | undefined>): Paint {
   const coloured = stream.isTTY === true && !env.NO_COLOR;
   return (style: Style, text: string) => (coloured ? `${STYLES[style][0]}${text}${STYLES[style][1]}` : text);
 }

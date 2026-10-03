@@ -1,6 +1,14 @@
 import { Command, CommanderError } from 'commander';
+import { registerAssignmentCommands } from './commands/assignment.ts';
+import { registerAvailabilityCommands } from './commands/availability.ts';
+import { registerCrewCommands } from './commands/crew.ts';
 import { type LoginOptions, login, logout, whoami } from './commands/login.ts';
+import { registerMatchCommands } from './commands/match.ts';
+import { registerMissionCommands } from './commands/mission.ts';
+import { registerOrgCommands } from './commands/org.ts';
 import { profileList, profileUse } from './commands/profile.ts';
+import type { Perform } from './commands/shared.ts';
+import { registerSkillCommands } from './commands/skill.ts';
 import { status } from './commands/status.ts';
 import type { Context, Io } from './context.ts';
 import { CliError, EXIT_CODES } from './errors.ts';
@@ -67,6 +75,24 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .action((name: string) => {
       exitCode = profileUse(context(), name);
     });
+
+  // The walk-through's commands, in its order (DESIGN.md section 8).
+  const perform: Perform =
+    (command) =>
+    async (...args) => {
+      exitCode = await command(context(), ...args);
+    };
+  for (const register of [
+    registerMissionCommands,
+    registerMatchCommands,
+    registerAssignmentCommands,
+    registerCrewCommands,
+    registerAvailabilityCommands,
+    registerSkillCommands,
+    registerOrgCommands,
+  ]) {
+    register(program, perform);
+  }
 
   try {
     await program.parseAsync(argv, { from: 'user' });

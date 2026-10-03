@@ -1,7 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import { CliError } from './errors.ts';
-import { readHiddenLine } from './prompt.ts';
+import { confirm, readHiddenLine } from './prompt.ts';
 
 /** A terminal, as far as the prompt can tell: it echoes nothing while in raw mode. */
 function fakeTerminal() {
@@ -39,5 +39,38 @@ describe('the hidden password prompt', () => {
     const closed = readHiddenLine(ended.input, ended.output, 'Password: ');
     ended.input.end();
     await expect(closed).rejects.toThrow('Login cancelled.');
+  });
+});
+
+describe('asking before a destructive change', () => {
+  const cannotAsk = new CliError('usage', 'There is no terminal to ask.');
+
+  it('goes ahead when the answer on the terminal is yes', async () => {
+    for (const yes of ['y\n', 'yes\n', ' Yes \r\n']) {
+      const { input, output, written } = fakeTerminal();
+      const asked = confirm(input, output, 'Release ASG-40?', cannotAsk);
+      input.write(yes);
+      await expect(asked).resolves.toBeUndefined();
+      expect(written).toEqual(['Release ASG-40? [y/N] ']);
+    }
+  });
+
+  it('changes nothing on any other answer, or none', async () => {
+    for (const answer of ['n\n', '\n', 'sure\n']) {
+      const { input, output } = fakeTerminal();
+      const asked = confirm(input, output, 'Release ASG-40?', cannotAsk);
+      input.write(answer);
+      await expect(asked).rejects.toThrow(new CliError('general', 'Nothing was changed.'));
+    }
+    const ended = fakeTerminal();
+    const asked = confirm(ended.input, ended.output, 'Release ASG-40?', cannotAsk);
+    ended.input.end();
+    await expect(asked).rejects.toThrow(new CliError('general', 'Nothing was changed.'));
+  });
+
+  it('refuses as told when there is no terminal to ask on', async () => {
+    const { output, written } = fakeTerminal();
+    await expect(confirm(Object.assign(new PassThrough(), { isTTY: false }), output, 'Release ASG-40?', cannotAsk)).rejects.toBe(cannotAsk);
+    expect(written).toEqual([]);
   });
 });

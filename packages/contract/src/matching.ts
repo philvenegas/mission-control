@@ -57,10 +57,25 @@ export const LOSS_REASONS = [
   'chosen_for_another_slot',
 ] as const;
 
+/** A component's value from 0 to 1, its share of the whole score, and the points it earned. */
+const weighed = { value: z.number(), weight: z.number(), points: z.number() };
+
+/**
+ * One component of a score, with what it was worked out from (DESIGN.md section 6.4): the level held,
+ * the days assigned in the window around the start, and the days rested, null for one who has never flown.
+ */
+export const scoreComponentSchema = z.discriminatedUnion('name', [
+  z.object({ name: z.literal('proficiency'), ...weighed, level: z.number().int() }),
+  z.object({ name: z.literal('workload'), ...weighed, days_assigned: z.number().int(), window_days: z.number().int() }),
+  z.object({ name: z.literal('rest'), ...weighed, days_rested: z.number().int().nullable() }),
+]);
+
+export type ScoreComponentResponse = z.infer<typeof scoreComponentSchema>;
+
 const scoreSchema = z.object({
   /** From 0 to 1: the sum of the components' points. */
   total: z.number(),
-  components: z.array(z.object({ name: matchWeightsSchema.keyof(), value: z.number(), weight: z.number(), points: z.number() })),
+  components: z.array(scoreComponentSchema),
 });
 
 const slotResultSchema = z.object({
@@ -81,7 +96,8 @@ const slotResultSchema = z.object({
   unfilled: z
     .object({
       lost_to: z.array(z.object({ reason: z.enum(LOSS_REASONS), count: z.number().int() })),
-      nearest_misses: z.array(z.object({ crew_member: crewMemberSummarySchema, failures: z.array(constraintFailureSchema) })),
+      /** Crew who hold the skill, nearest miss first: the level they hold it at, and everything they lack. */
+      nearest_misses: z.array(z.object({ crew_member: crewMemberSummarySchema, level: z.number().int(), failures: z.array(constraintFailureSchema) })),
     })
     .nullable(),
 });

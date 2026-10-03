@@ -101,8 +101,8 @@ describe('explaining the choice', () => {
         { reason: 'chosen_for_another_slot', count: 1 },
       ],
       nearestMisses: [
-        { crewMember: { ref: tala.ref, name: 'Tala Moreno' }, failures: [{ constraint: 'availability', block: onLeave }] },
-        { crewMember: { ref: sven.ref, name: 'Sven Dahl' }, failures: [{ constraint: 'skill', level: 3, minLevel: 4 }] },
+        { crewMember: { ref: tala.ref, name: 'Tala Moreno' }, level: 5, failures: [{ constraint: 'availability', block: onLeave }] },
+        { crewMember: { ref: sven.ref, name: 'Sven Dahl' }, level: 3, failures: [{ constraint: 'skill', level: 3, minLevel: 4 }] },
       ],
     });
     expect(result.summary).toMatchObject({ open: 2, filled: 1 });
