@@ -14,7 +14,7 @@ pnpm api             # the API on http://localhost:3000, in a terminal of its ow
 pnpm test            # unit tests; no database needed
 pnpm test:int        # integration tests, against a separate test database
 pnpm test:coverage   # both, with every file's uncovered lines
-pnpm lint            # lint, and find unused exports, files and dependencies
+pnpm lint            # lint, find unused exports, files and dependencies, and words the glossary avoids
 pnpm demo:reset      # reseed
 export PATH="$PWD/bin:$PATH"   # makes `mctl` runnable; nothing is installed outside the repository
 pnpm demo:login      # six demo profiles: lead (current), director, ada, quin, mina, helios

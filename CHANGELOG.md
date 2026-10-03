@@ -76,6 +76,8 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - Every command prints who it acts as on the error stream, `--json` prints the API's answer as it came, colour is used only on a terminal, and errors print the API's message and hint with the exit codes of `DESIGN.md` section 8. An expired login prints the exact command to log back in; an API that cannot be reached is named, with the command that starts it.
 - `pnpm demo:login`: the six demo profiles, with `lead` current.
 - Node 22.18 or later, which runs the CLI's TypeScript without a build.
+- `pnpm lint` runs the glossary test, so a word `CONTEXT.md` avoids fails the first lint. A file may now be excused more than one avoided word.
+- `test/locks.ts`: `waitsForRowLock` holds a record's row lock from a test and reports whether a request waits on it. `CODING_STANDARDS.md` asks that a test of a lock fail without the lock.
 
 ### Fixed
 

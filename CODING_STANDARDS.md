@@ -4,7 +4,7 @@ How code is written in this repository. `DESIGN.md` says what to build and `CONT
 
 A rule here outranks a general habit. Where a rule and `DESIGN.md` disagree, the design wins and the conflict is raised, not worked around.
 
-Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `knip`) or by a unit test, and fail CI, so a review need not look for them.
+Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js`, `knip` and the glossary test) or by a unit test, and fail CI, so a review need not look for them.
 
 ## Scope
 
@@ -15,7 +15,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `kn
 
 ## Names
 
-- **Use the glossary's term, in full** *(checked: `glossary.test.ts`)*. `crewMember`, not `member`; `missionLeads`, not `leads`. The `_Avoid_` lists in `CONTEXT.md` apply to variables, test names, SQL aliases and comments, not only to prose. A word avoided in one sense but right in another (`filter`, `role`) goes on the test's list of ambiguous words, with the reason; a review checks that reason.
+- **Use the glossary's term, in full** *(checked: `glossary.test.ts`)*. `crewMember`, not `member`; `missionLeads`, not `leads`. The `_Avoid_` lists in `CONTEXT.md` apply to variables, test names, SQL aliases and comments, not only to prose. A word avoided in one sense but right in another (`filter`, `role`) goes on the test's list of ambiguous words, with the reason; a word meant in only a few files (the demo profile `lead`) is listed against those files instead. A review checks each reason. `pnpm lint` runs this test, so a slip shows at the first lint, not the last test run.
 - **A name says what the value holds.** No `t`, `n`, `m`; no reusing one name for two things in a function. A list is named for what is in it (`betweenTenantTables`, not `single`).
 - **Where the design fixes a name, keep it,** even against the glossary (`no_double_booking`).
 
@@ -61,6 +61,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `kn
 - **Assert the outcome a person would check:** calendar dates, references, names. Not row counts alone.
 - **No magic numbers.** Derive the expectation from the source (the list of tables from the schema), so the test stays true when the source grows.
 - **Every invariant in the domain skill that a change touches is exercised by a test in that change.**
+- **A test of a lock must fail without the lock.** Two requests raced against each other rarely land in the window a lock protects, so such a test passes either way. Hold the lock from the test with `test/locks.ts` (`waitsForRowLock`) and assert the request waits on it; then check the test goes red with the lock removed.
 - **A red or flaky test is fixed when seen,** whoever caused it. Run a new integration test twice before calling it stable.
 
 ## Seed data

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Route } from '../../http/route.ts';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
 import { type ArrangedCrew, arrangeLogin, arrangeMission, weekOf2031 } from '../../test/arrange.ts';
+import { waitsForRowLock } from '../../test/locks.ts';
 import { crewOf, errorOf as error, missionOf as mission } from '../../test/missions.ts';
 
 /**
@@ -71,28 +72,6 @@ async function assignmentOf(missionRef: string, crewMember = ADA) {
   const found = shown.requirements.flatMap(({ crew }) => crew).find((crew) => crew.crew_member.ref === crewMember);
   if (!found) throw new Error(`${crewMember} is not on ${missionRef}`);
   return found.assignment;
-}
-
-/**
- * Sends a request while another transaction holds a crew member's row lock, and says whether the
- * request waited for it, and how it was answered once the lock was let go.
- */
-async function waitsForCrewMember(crewMember: string, request: () => ReturnType<Caller['get']>) {
-  const { inFlight, waited } = await owner.begin(async (tx) => {
-    await tx`SELECT 1 FROM crew_members WHERE ref = ${parseRef('crew_member', crewMember)}
-      AND org_id = (SELECT id FROM organisations WHERE slug = 'artemis') FOR UPDATE`;
-    let settled = false;
-    const sent = Promise.resolve(request()).finally(() => (settled = true));
-    let blocked = false;
-    for (let attempt = 0; attempt < 100 && !blocked && !settled; attempt++) {
-      const [waiting] = await owner`SELECT count(*)::int AS requests FROM pg_locks WHERE NOT granted`;
-      blocked = (waiting?.requests ?? 0) > 0;
-      if (!blocked) await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    // Wrapped, so the transaction ends, letting the request go on, before it is awaited.
-    return { inFlight: sent, waited: blocked };
-  });
-  return { waited, status: (await inFlight).status };
 }
 
 let week = 0;
@@ -388,9 +367,9 @@ describe('the proposal check on a mission read', () => {
     const period = nextPeriod();
     const sams = await draft(sam, 'Waited', period);
     await propose(sam, sams);
-    expect(await waitsForCrewMember(ADA, () => submit(sam, sams))).toMatchObject({ waited: true, status: 200 });
-    expect(await waitsForCrewMember(ADA, () => ada.post('/v1/crew/me/availability', period))).toMatchObject({ waited: true, status: 409 });
-    expect(await waitsForCrewMember(ADA, () => dana.patch(`/v1/crew/${ADA}`, { status: 'active' }))).toMatchObject({ waited: true, status: 200 });
+    expect(await waitsForRowLock(owner, { org: 'artemis', kind: 'crew_member', ref: ADA }, () => submit(sam, sams))).toMatchObject({ waited: true, status: 200 });
+    expect(await waitsForRowLock(owner, { org: 'artemis', kind: 'crew_member', ref: ADA }, () => ada.post('/v1/crew/me/availability', period))).toMatchObject({ waited: true, status: 409 });
+    expect(await waitsForRowLock(owner, { org: 'artemis', kind: 'crew_member', ref: ADA }, () => dana.patch(`/v1/crew/${ADA}`, { status: 'active' }))).toMatchObject({ waited: true, status: 200 });
   });
 
   it('turns a second hold on a crew member over the same period into 409, whatever the application checked', async () => {
