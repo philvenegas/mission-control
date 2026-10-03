@@ -100,5 +100,6 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 ### Changed
 
 - Coverage thresholds rise to the level now reached: statements and lines 98%, branches 98.5%.
+- `pnpm demo:setup` ends by naming the next step, `pnpm api`, then the README's walk-through.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main
