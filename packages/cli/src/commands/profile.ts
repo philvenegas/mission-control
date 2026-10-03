@@ -1,15 +1,16 @@
-import { type Context, describeLogin, formatTime, loadConfig, printActingAs, printAnswer, printNext, saveConfig } from '../context.ts';
-import { paint } from '../output.ts';
-import { requireProfile, resolveProfileName, useProfile } from '../profiles.ts';
+import { type Context, loadConfig, saveConfig } from '../context.ts';
+import { describeLogin, formatTime, printActingAs, printAnswer, printNext } from '../output/print.ts';
+import { paint } from '../output/style.ts';
+import { requireProfile, useProfile } from '../profiles.ts';
+import { actingProfile, LOG_IN } from '../session.ts';
 
-/** Every profile, marking the one commands act as. Tokens are never printed. */
-export function listProfiles(context: Context): number {
+/** `mctl profile list`: every profile, marking the current one. Tokens are never printed. */
+export function profileList(context: Context): number {
   const config = loadConfig(context);
-  const acting = resolveProfileName(config, context.profileFlag, context.io.env);
+  const acting = actingProfile(context, config)?.profile;
+  if (acting) printActingAs(context, acting);
   const entries = Object.entries(config.profiles).sort(([a], [b]) => (a < b ? -1 : 1));
-  const actingProfile = entries.find(([name]) => name === acting)?.[1];
-  if (actingProfile) printActingAs(context, actingProfile);
-  const dim = paint(context.io.stdout, context.io.env);
+  const style = paint(context.io.stdout, context.io.env);
   const width = Math.max(0, ...entries.map(([name]) => name.length));
   printAnswer(
     context,
@@ -25,17 +26,17 @@ export function listProfiles(context: Context): number {
       expires_at: profile.expires_at,
     })),
     entries.length === 0
-      ? ['No profiles yet. Log in with `mctl login --org <slug> --email <email>`.']
+      ? [`No profiles yet. ${LOG_IN}`]
       : entries.map(([name, profile]) => {
-          const login = profile.expires_at === null ? dim('dim', 'logged out') : `expires ${formatTime(profile.expires_at)}`;
+          const login = profile.expires_at === null ? style('dim', 'logged out') : `expires ${formatTime(profile.expires_at)}`;
           return `${name === config.current ? '*' : ' '} ${name.padEnd(width)}  ${describeLogin(profile)}  ${profile.email}  ${login}`;
         }),
   );
   return 0;
 }
 
-/** Makes a profile the current one. */
-export function useProfileCommand(context: Context, name: string): number {
+/** `mctl profile use`: makes a profile the current one. */
+export function profileUse(context: Context, name: string): number {
   const config = useProfile(loadConfig(context), name);
   saveConfig(context, config);
   printActingAs(context, requireProfile(config, name));

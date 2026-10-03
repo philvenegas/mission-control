@@ -25,8 +25,12 @@ export interface ApiAnswer<T> {
   raw: unknown;
 }
 
-const unreachable = (api: string) =>
-  new CliError('general', `Cannot reach the API at ${api}.`, 'Start it with `pnpm api`, in a terminal of its own, or check the address with `mctl status`.');
+/** Nothing answered at the API's address: it is not running there. */
+export class UnreachableApi extends CliError {
+  constructor(api: string) {
+    super('general', `Cannot reach the API at ${api}.`, 'Start it with `pnpm api`, in a terminal of its own, or check the address with `mctl status`.');
+  }
+}
 
 export async function callApi<Schema extends z.ZodType>(api: string, request: ApiRequest, schema: Schema): Promise<ApiAnswer<z.infer<Schema>>> {
   let response: Response;
@@ -40,7 +44,7 @@ export async function callApi<Schema extends z.ZodType>(api: string, request: Ap
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   } catch {
-    throw unreachable(api);
+    throw new UnreachableApi(api);
   }
   const text = await response.text();
   let raw: unknown;

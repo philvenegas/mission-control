@@ -1,9 +1,10 @@
 import { Command, CommanderError } from 'commander';
-import { listProfiles, useProfileCommand } from './commands/profile.ts';
-import { type LoginOptions, login, logout, whoami } from './commands/session.ts';
+import { type LoginOptions, login, logout, whoami } from './commands/login.ts';
+import { profileList, profileUse } from './commands/profile.ts';
 import { status } from './commands/status.ts';
-import { type Context, type Io, printError } from './context.ts';
+import type { Context, Io } from './context.ts';
 import { CliError, EXIT_CODES } from './errors.ts';
+import { printError } from './output/print.ts';
 import { configPath } from './profiles.ts';
 
 /**
@@ -57,14 +58,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
     .command('list')
     .description('every profile, marking the current one')
     .action(() => {
-      exitCode = listProfiles(context());
+      exitCode = profileList(context());
     });
   profiles
     .command('use')
     .description('make a profile the current one')
     .argument('<name>', 'the profile')
     .action((name: string) => {
-      exitCode = useProfileCommand(context(), name);
+      exitCode = profileUse(context(), name);
     });
 
   try {

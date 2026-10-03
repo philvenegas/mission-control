@@ -13,6 +13,8 @@ export const EXIT_CODES = {
   notFound: 5,
   /** A refused change, such as a transition whose guard does not hold: 409. */
   conflict: 6,
+  /** Stopped by the user with Ctrl-C, as shells report it. */
+  interrupted: 130,
 } as const;
 
 export type Failure = keyof typeof EXIT_CODES;

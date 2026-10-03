@@ -10,7 +10,7 @@
     "demo:setup": "bash scripts/demo-setup.sh",
     "api": "pnpm --silent --filter @mission-control/api start",
     "demo:reset": "pnpm --filter @mission-control/api db:seed",
-    "demo:login": "bash scripts/demo-login.sh",
+    "demo:login": "node scripts/demo-login.ts",
     "build": "pnpm -r build",
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",

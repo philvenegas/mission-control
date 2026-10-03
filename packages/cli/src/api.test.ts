@@ -3,6 +3,7 @@ import { healthResponseSchema } from '@mission-control/contract';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { apiAddress, callApi, DEFAULT_API } from './api.ts';
 import { CliError } from './errors.ts';
+import { mctl, scratch } from './test/api.ts';
 
 describe('the API\'s address', () => {
   it('is the one given, else MCTL_API, else the default, without a trailing slash', () => {
@@ -38,6 +39,12 @@ describe('an answer that is not the contract\'s', () => {
       new CliError('general', `The API at ${address} answered 502.`),
     );
     await expect(callApi(address, { method: 'GET', path: '/v1/teapot' }, healthResponseSchema)).rejects.toMatchObject({ failure: 'conflict' });
+  });
+
+  it('makes mctl status say the API answers, but not as expected, rather than that it is not running', async () => {
+    const ran = await mctl(['status'], { MCTL_API: address, MCTL_CONFIG: `${scratch()}/config.json` });
+    expect(ran.code).toBe(1);
+    expect(ran.stdout).toContain(`API      ${address}  answers, but not as expected: The API at ${address} gave an answer this mctl does not understand.`);
   });
 
   it('refuses a success it does not understand, rather than guessing', async () => {

@@ -29,7 +29,7 @@ describe('pnpm demo:login', () => {
     const env = { MCTL_CONFIG: join(scratch(), 'config.json'), MCTL_API: api.url() };
     const ran = await shell('pnpm', ['--silent', 'demo:login'], env);
     expect(ran.code).toBe(0);
-    expect(ran.stdout).toContain('current profile: lead');
+    expect(ran.stdout).toContain('Profile "lead" is now current.');
     const listed = await shell('bin/mctl', ['profile', 'list', '--json'], env);
     const profiles = z.array(z.object({ name: z.string(), current: z.boolean(), email: z.string() })).parse(JSON.parse(listed.stdout));
     expect(profiles.map(({ name, current, email }) => [name, current, email])).toEqual([

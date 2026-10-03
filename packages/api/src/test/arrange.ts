@@ -9,7 +9,7 @@ import {
   type Role,
 } from '@mission-control/contract';
 import { hashPassword } from '../auth/password.ts';
-import { DEMO_PASSWORD } from '../db/seed.ts';
+import { DEMO_PASSWORD } from '../db/seed-data.ts';
 import type { connectAsOwner } from './database.ts';
 
 // Data a test needs that the API cannot create: a mission already in a given status, crew already

@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +7,8 @@ import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll } from 'vitest';
+// Loads .env, as the API does.
+import { requireEnv } from '../../../api/src/env.ts';
 import type { Io } from '../context.ts';
 import { run } from '../run.ts';
 
@@ -15,14 +17,6 @@ import { run } from '../run.ts';
 
 export const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const TSX = join(ROOT, 'node_modules/.bin/tsx');
-const envFile = join(ROOT, '.env');
-if (existsSync(envFile)) process.loadEnvFile(envFile);
-
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set. Run \`pnpm demo:setup\`, which copies .env.example to .env.`);
-  return value;
-}
 
 /** A port nothing is listening on. */
 const freePort = () =>

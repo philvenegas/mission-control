@@ -4,12 +4,12 @@ import { PassThrough } from 'node:stream';
 import { loginResponseSchema, meResponseSchema } from '@mission-control/contract';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { DEMO_PASSWORD as PASSWORD } from '../../api/src/db/seed-data.ts';
 import { logIn, readConfig, writeConfig } from './profiles.ts';
 import { mctl, scratch, useRunningApi } from './test/api.ts';
 
 const api = useRunningApi();
 
-const PASSWORD = 'mission-control-demo';
 const SAM_LOGIN = ['login', '--org', 'artemis', '--email', 'sam@artemis.example', '--password-stdin'];
 const DANA_LOGIN = ['login', '--org', 'artemis', '--email', 'dana@artemis.example', '--password-stdin'];
 
@@ -62,6 +62,13 @@ describe('mctl login', () => {
     const piped = await run(['login', '--org', 'artemis', '--email', 'sam@artemis.example']);
     expect(piped).toEqual({ code: 2, stdout: '', stderr: 'Error: There is no terminal to ask for the password.\n  Pipe it in with --password-stdin.\n' });
     expect(await run(SAM_LOGIN, { stdin: '\n' })).toMatchObject({ code: 2, stderr: 'Error: No password was given on standard input.\n' });
+    // A terminal would echo the password as it was typed.
+    const terminal = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => terminal });
+    expect(await run(SAM_LOGIN, { stdin: terminal })).toEqual({
+      code: 2,
+      stdout: '',
+      stderr: 'Error: --password-stdin reads the password from a pipe, not a terminal.\n  Leave it out to be asked for the password.\n',
+    });
   });
 
   it('prints the API\'s refusal with its hint, exits 3, and keeps nothing', async () => {
@@ -123,11 +130,11 @@ describe('acting as a profile', () => {
   });
 
   it('logs out of the current profile, or of every one, and then says how to log back in', async () => {
-    expect((await run(['logout'])).stdout).toBe('Logged out of profile "lead".\nNext: mctl login --org artemis --email sam@artemis.example --profile lead\n');
+    expect((await run(['logout'])).stdout).toBe(`Logged out of profile "lead".\nNext: mctl login --org artemis --email sam@artemis.example --profile lead --api ${api.url()}\n`);
     expect(await run(['whoami'])).toEqual({
       code: 3,
       stdout: '',
-      stderr: 'Error: Profile "lead" is logged out.\n  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead\n',
+      stderr: `Error: Profile "lead" is logged out.\n  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead --api ${api.url()}\n`,
     });
     expect((await run(['whoami', '--profile', 'director'])).code).toBe(0);
     expect((await run(['logout', '--all'])).stdout).toBe('Logged out of 2 profiles.\n');
@@ -144,7 +151,7 @@ describe('acting as a profile', () => {
     expect(await run(['whoami'])).toEqual({
       code: 3,
       stdout: '',
-      stderr: 'Error: Your login for profile "lead" expired at 2026-01-01 00:00 UTC.\n  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead\n',
+      stderr: `Error: Your login for profile "lead" expired at 2026-01-01 00:00 UTC.\n  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead --api ${api.url()}\n`,
     });
     expect((await run(['status'])).stdout).toContain('Login    expired 2026-01-01 00:00 UTC');
   });
@@ -159,7 +166,7 @@ describe('acting as a profile', () => {
       stdout: '',
       stderr:
         'as Sam Okafor · mission lead · Artemis\nError: The API no longer accepts the login of profile "lead".\n' +
-        '  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead\n',
+        `  Log in again: mctl login --org artemis --email sam@artemis.example --profile lead --api ${api.url()}\n`,
     });
   });
 
@@ -180,6 +187,7 @@ describe('acting as a profile', () => {
     expect((await run(['whoami', '--profile', 'nobody'])).stderr).toBe('Error: There is no profile "nobody".\n  Log in with `mctl login --org <slug> --email <email>`.\n');
     const empty = { env: { MCTL_CONFIG: join(scratch(), 'none.json') } };
     expect(await run(['logout'], empty)).toMatchObject({ code: 3, stderr: expect.stringContaining('You are not logged in.') });
+    expect(await run(['logout', '--profile', 'nobody'])).toMatchObject({ code: 3, stderr: expect.stringContaining('There is no profile "nobody".') });
     expect(await run(['profile', 'list'], empty)).toEqual({ code: 0, stdout: 'No profiles yet. Log in with `mctl login --org <slug> --email <email>`.\n', stderr: '' });
   });
 });
@@ -199,7 +207,7 @@ describe('mctl status', () => {
     const ran = await run(['status']);
     expect(ran).toEqual({
       code: 0,
-      stdout: `API      ${api.url()}  reachable\nProfile  none: log in with \`mctl login --org <slug> --email <email>\`\n`,
+      stdout: `API      ${api.url()}  reachable\nProfile  none. Log in with \`mctl login --org <slug> --email <email>\`.\n`,
       stderr: '',
     });
   });

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ROLES } from '@mission-control/contract';
 import { z } from 'zod';
@@ -46,12 +46,16 @@ export function readConfig(path: string): Config {
   return config.data;
 }
 
-/** Writes the logins, readable only by the user: the file is 0600 and its folder 0700. */
+/**
+ * Writes the logins, readable only by the user: the file is 0600 and its folder 0700. The new file
+ * is written whole beside the old and renamed over it, so a token is never in a file others can
+ * read, and a crash part-way leaves the old logins intact.
+ */
 export function writeConfig(path: string, config: Config) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-  // The mode above applies only to a new file.
-  chmodSync(path, 0o600);
+  const fresh = `${path}.${process.pid}.tmp`;
+  writeFileSync(fresh, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
+  renameSync(fresh, path);
 }
 
 /** Keeps a login under a profile name. The first login becomes current. */

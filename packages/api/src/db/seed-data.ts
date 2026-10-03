@@ -9,6 +9,12 @@ import {
 // The demo data, as DESIGN.md section 10 specifies it. People are named by first name, which is
 // unique within an organisation here.
 
+/** Every seeded user's password, which the seed prints. */
+export const DEMO_PASSWORD = 'mission-control-demo';
+
+/** A seeded user's email: `<first name>@<slug>.example`, from their name or first name. */
+export const demoEmail = (name: string, slug: string) => `${(name.split(' ')[0] ?? name).toLowerCase()}@${slug}.example`;
+
 /** Every seeded date is a number of days from this one. Move it forward once the 2027 dates pass. */
 export const SEED_BASE_DATE = '2026-10-01';
 

@@ -1,24 +1,7 @@
 import { PassThrough } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { CliError, failureFor } from './errors.ts';
-import { paint, readHiddenLine } from './output.ts';
-
-describe('exit codes', () => {
-  it('follow the API\'s answer as DESIGN.md section 8 lists them', () => {
-    const codes = [400, 422, 401, 403, 404, 409, 500, 418].map((status) => new CliError(failureFor(status), '').exitCode);
-    expect(codes).toEqual([2, 2, 3, 4, 5, 6, 1, 1]);
-  });
-});
-
-describe('colour', () => {
-  it('is used only when writing to a terminal, and never when NO_COLOR is set', () => {
-    expect(paint({ isTTY: true }, {})('dim', 'as Sam')).toBe('\u001b[2mas Sam\u001b[22m');
-    expect(paint({ isTTY: true }, {})('red', 'Error')).toBe('\u001b[31mError\u001b[39m');
-    expect(paint({ isTTY: false }, {})('dim', 'as Sam')).toBe('as Sam');
-    expect(paint({}, {})('green', 'ok')).toBe('ok');
-    expect(paint({ isTTY: true }, { NO_COLOR: '1' })('dim', 'as Sam')).toBe('as Sam');
-  });
-});
+import { CliError } from './errors.ts';
+import { readHiddenLine } from './prompt.ts';
 
 /** A terminal, as far as the prompt can tell: it echoes nothing while in raw mode. */
 function fakeTerminal() {
@@ -39,12 +22,18 @@ describe('the hidden password prompt', () => {
     expect(input.rawModes).toEqual([true, false]);
   });
 
-  it('gives up on Ctrl-C, and on the end of input, without a password', async () => {
+  it('gives up on Ctrl-C, Ctrl-D and the end of input, without a password, exiting as an interruption', async () => {
     const interrupted = fakeTerminal();
     const cancelled = readHiddenLine(interrupted.input, interrupted.output, 'Password: ');
     interrupted.input.write('sec\u0003');
-    await expect(cancelled).rejects.toThrow(new CliError('general', 'Login cancelled.'));
+    await expect(cancelled).rejects.toThrow(new CliError('interrupted', 'Login cancelled.'));
+    await expect(cancelled).rejects.toMatchObject({ exitCode: 130 });
     expect(interrupted.input.rawModes).toEqual([true, false]);
+
+    const quit = fakeTerminal();
+    const ctrlD = readHiddenLine(quit.input, quit.output, 'Password: ');
+    quit.input.write('\u0004');
+    await expect(ctrlD).rejects.toThrow('Login cancelled.');
 
     const ended = fakeTerminal();
     const closed = readHiddenLine(ended.input, ended.output, 'Password: ');
