@@ -13,6 +13,17 @@ beforeAll(async () => {
   as = await logInEveryone(api.url());
 });
 
+/** Each slot of a mission, with its crew member, their status and any reason they declined. */
+async function crewOf(missionRef: string) {
+  const mission = await json(as('sam', ['mission', 'show', missionRef, '--json']), missionSchema);
+  return {
+    status: mission.status,
+    crew: mission.requirements.flatMap(({ skill, crew }) =>
+      crew.map(({ crew_member: crewMember, status, decline_reason: reason }) => `${skill}: ${crewMember.name} ${status}${reason ? ` (${reason})` : ''}`),
+    ),
+  };
+}
+
 /** The assignment a crew member is offered, by mission. */
 async function offerTo(person: 'ada' | 'quin' | 'mina', missionRef: string) {
   const offers = await json(as(person, ['assignment', 'list', '--json']), z.array(crewAssignmentSchema));
@@ -45,8 +56,11 @@ describe('act 1: plan to launch', () => {
     expect(ran.stdout).toMatch(/\nSaved as RUN-1\. Nothing has changed yet\.\n {2}Apply it: {6}mctl match apply RUN-1\n {2}Pick another: {2}mctl assignment add MSN-8 --crew CRW-\d+ --skill (medic|pilot)\n$/);
     const mission = await json(as('sam', ['mission', 'show', 'MSN-8', '--json']), missionSchema);
     expect(mission.requirements.flatMap(({ crew }) => crew)).toEqual([]);
-    // Shown again later, the run prints the same.
+    // Shown again later, the run prints the same; its answer chooses Ada as pilot and Quin as medic.
     expect((await as('sam', ['match', 'show', 'RUN-1'])).stdout).toBe(ran.stdout);
+    const run = await json(as('sam', ['match', 'show', 'RUN-1', '--json']), matchRunSchema);
+    expect(run.slots.map(({ slot, chosen }) => `${slot.skill}: ${chosen?.crew_member.name}`)).toEqual(['medic: Quin Abara', 'pilot: Ada Reyes']);
+    expect(run.applied_at).toBeNull();
   });
 
   it('applies the run, submits, and is refused approval as a mission lead before a director approves', async () => {
@@ -56,7 +70,12 @@ describe('act 1: plan to launch', () => {
       code: 0,
       stdout: 'Submitted MSN-8 for approval; its crew are held.\nNext (a director): mctl mission approve MSN-8\n',
     });
-    expect(await as('sam', ['mission', 'approve', 'MSN-8'])).toMatchObject({ code: 4, stdout: '' });
+    expect(await as('sam', ['mission', 'approve', 'MSN-8', '--json'])).toEqual({
+      code: 4,
+      stdout: '',
+      stderr: 'as Sam Okafor · mission lead · Artemis\nError: Your role does not allow this.\n',
+    });
+    expect(await crewOf('MSN-8')).toEqual({ status: 'submitted', crew: ['medic: Quin Abara held', 'pilot: Ada Reyes held'] });
     expect(await as('dana', ['mission', 'approve', 'MSN-8'])).toEqual({
       code: 0,
       stdout: 'Approved MSN-8. Its crew are offered their places.\nNext: mctl mission show MSN-8\n',
@@ -76,6 +95,10 @@ describe('act 1: plan to launch', () => {
     expect(refilled.stdout).toMatch(/^MSN-8 {2}Europa Survey {2}1–20 Mar 2027\n✓ 2 of 2 slots filled\n\nmedic {2}level 3 or above\n {2}→ Mina Farouk CRW-3 /);
     expect(refilled.stdout).toContain('  CRW-7 Quin Abara — declined MSN-8\n');
     expect(refilled.stdout).toMatch(/\n\nApplied RUN-2\. MSN-8 has 2 of 2 slots filled\.\n {2}medic: Mina Farouk CRW-3, offered \(ASG-\d+\)\n$/);
+    expect(await crewOf('MSN-8')).toEqual({
+      status: 'approved',
+      crew: ['medic: Quin Abara declined (Medical leave)', 'medic: Mina Farouk offered', 'pilot: Ada Reyes offered'],
+    });
   });
 
   it('launches once both accept, and shows who did what, and when', async () => {
@@ -111,18 +134,30 @@ describe('act 2: a clash', () => {
     expect(list.find((line) => line.startsWith('MSN-4'))).toContain('✗ clash: Ada Reyes also on MSN-5 (Priya Nair)');
     expect(list.find((line) => line.startsWith('MSN-5'))).toContain('✗ clash: Ada Reyes also on MSN-4 (Sam Okafor)');
 
-    expect(await as('sam', ['mission', 'submit', 'MSN-4'])).toMatchObject({ code: 6, stderr: expect.stringContaining('Ada Reyes CRW-1 is also proposed on MSN-5 Vesta Mapping') });
+    expect(await as('sam', ['mission', 'submit', 'MSN-4', '--json'])).toMatchObject({
+      code: 6,
+      stdout: '',
+      stderr: expect.stringContaining('Ada Reyes CRW-1 is also proposed on MSN-5 Vesta Mapping'),
+    });
+    expect(await crewOf('MSN-4')).toEqual({ status: 'draft', crew: ['engineer: Noor Haddad proposed', 'pilot: Ada Reyes proposed'] });
     expect((await as('sam', ['assignment', 'remove', `${clashing}`, '--yes'])).stdout).toBe(`Released ${clashing} from MSN-4.\nNext: mctl match run MSN-4\n`);
     const refilled = await as('sam', ['match', 'run', 'MSN-4', '--apply']);
     expect(refilled.stdout).toMatch(/\n {2}pilot: Ben Osei CRW-2, proposed \(ASG-\d+\)\nNext: mctl mission submit MSN-4\n$/);
-    expect(await as('sam', ['mission', 'submit', 'MSN-4'])).toMatchObject({ code: 0 });
+    expect((await json(as('sam', ['mission', 'submit', 'MSN-4', '--json']), missionSchema)).status).toBe('submitted');
+    expect(await crewOf('MSN-4')).toEqual({ status: 'submitted', crew: ['engineer: Noor Haddad held', 'pilot: Ben Osei held'] });
+    // Ada is let go from Ceres Resupply only; Vesta Mapping keeps her, now with no clash.
+    const vesta = await json(as('sam', ['mission', 'show', 'MSN-5', '--json']), missionSchema);
+    expect(vesta.requirements.flatMap(({ crew }) => crew.map(({ crew_member: crewMember, problems }) => [crewMember.name, problems]))).toContainEqual(['Ada Reyes', []]);
   });
 });
 
 describe('act 3: another organisation sees nothing', () => {
   it('finds no MSN-8, and lists only its own missions and crew', async () => {
     expect(await as('farid', ['mission', 'show', 'MSN-8'])).toEqual({ code: 5, stdout: '', stderr: 'as Farid Rahimi · mission lead · Helios Labs\nError: MSN-8 was not found.\n' });
+    expect(await as('farid', ['mission', 'show', 'MSN-8', '--json'])).toMatchObject({ code: 5, stdout: '' });
     expect((await as('farid', ['mission', 'list'])).stdout.split('\n').map((line) => line.split('  ')[1])).toEqual(['Solar Corona Probe', 'Mercury Flyby', undefined]);
+    const missions = await json(as('farid', ['mission', 'list', '--json']), z.array(missionSchema));
+    expect(missions.map(({ name, owner }) => `${name}, ${owner.name}`)).toEqual(['Solar Corona Probe, Farid Rahimi', 'Mercury Flyby, Farid Rahimi']);
     const crew = await json(as('farid', ['crew', 'list', '--json']), z.array(crewMemberSchema));
     expect(crew.flatMap(({ skills }) => skills.map(({ skill }) => skill))).toContain('field medicine');
     expect(crew.map(({ name }) => name)).not.toContain('Ada Reyes');

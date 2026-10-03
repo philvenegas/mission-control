@@ -1,38 +1,294 @@
 # Mission Control
 
-A multi-tenant platform where space organisations plan missions and staff them with crew.
-This README is completed in the last build step; until then it records how to set up and where the build diverged.
+Mission Control lets a space organisation plan missions and staff them with the right crew.
+A mission lead says what a mission needs; the matcher proposes a full crew and explains every choice and every exclusion, and never double-books anyone; a director approves, and crew accept or decline.
+It is a multi-tenant HTTP API and a CLI, `mctl`, that exercises every workflow; each organisation sees only its own data.
 
 ## Setup
 
-Prerequisites: Docker, Node 22.18 or later, and pnpm.
+Prerequisites: Docker, Node 22.18 or later, and pnpm. Postgres runs in Docker; the API and the CLI run on your machine.
 
-```
+```sh
 pnpm install
-pnpm demo:setup      # start Postgres, create roles and databases, migrate, seed, build
-pnpm api             # the API on http://localhost:3000, in a terminal of its own (PORT in .env changes it)
-pnpm test            # unit tests; no database needed
-pnpm test:int        # integration tests, against a separate test database
-pnpm test:coverage   # both, with every file's uncovered lines
-pnpm lint            # lint, find unused exports, files and dependencies, and words the glossary avoids
-pnpm demo:reset      # reseed
-export PATH="$PWD/bin:$PATH"   # makes `mctl` runnable; nothing is installed outside the repository
-pnpm demo:login      # six demo profiles: lead (current), director, ada, quin, mina, helios
+pnpm demo:setup                  # start Postgres, migrate, seed, build; says what each step did
+pnpm api                         # the API, in a terminal of its own
+export PATH="$PWD/bin:$PATH"     # makes `mctl` runnable; nothing is installed outside the repository
+pnpm demo:login                  # six demo profiles
 mctl status
 ```
 
-`make` lists the same commands as Makefile targets.
+- `pnpm demo:setup` copies `.env.example` to `.env`, and can be run again safely. Postgres is published on host port 54329, so it cannot collide with a Postgres you already run; the API listens on 3000 (`PORT` in `.env` changes it).
+- `pnpm demo:login` logs in as six seeded users, one profile each: `lead` (Sam Okafor, a mission lead, current), `director` (Dana Okoye), the crew members `ada`, `quin` and `mina`, and `helios` (Farid Rahimi, a mission lead at Helios Labs). Every seeded user's password is `mission-control-demo`.
+- `pnpm demo:reset` reseeds, returning the walk-through to a clean state. Run `pnpm demo:login` after it.
+- `make` lists the same commands as Makefile targets.
 
-Every seeded user has the password `mission-control-demo`. To log in by hand:
+## Walk-through
 
+Three short acts, from a clean state: with the API running, run `pnpm demo:reset` and `pnpm demo:login`, then the commands below. What each prints is copied from a real run; only the times will differ. This section is also a test: `packages/cli/src/readme.int.test.ts` runs every command in it, twice, and fails if one exits or prints differently.
+
+### Act 1: plan to launch
+
+A two-slot mission, so that few crew logins are needed. Sam, a mission lead, creates it, runs the matcher, applies its proposal and submits; Dana, a director, approves; Quin declines; the matcher fills the reopened slot; the crew accept and Sam launches.
+
+```console
+$ mctl login --org artemis --email sam@artemis.example --profile lead   # the real flow, once, by hand
+Password:
+as Sam Okafor · mission lead · Artemis
+Logged in to Artemis as Sam Okafor. Saved as profile "lead", the current one.
+The login expires at 2026-10-10 09:52 UTC.
+Next: mctl whoami
+
+$ mctl whoami
+as Sam Okafor · mission lead · Artemis
+Sam Okafor <sam@artemis.example>
+Sam Okafor · mission lead · Artemis
+Profile "lead" at http://localhost:3000; the login expires at 2026-10-10 09:52 UTC.
+
+$ mctl profile list
+as Sam Okafor · mission lead · Artemis
+  ada       Ada Reyes · crew member · Artemis  ada@artemis.example  expires 2026-10-10 09:52 UTC
+  director  Dana Okoye · director · Artemis  dana@artemis.example  expires 2026-10-10 09:52 UTC
+  helios    Farid Rahimi · mission lead · Helios Labs  farid@helios.example  expires 2026-10-10 09:52 UTC
+* lead      Sam Okafor · mission lead · Artemis  sam@artemis.example  expires 2026-10-10 09:52 UTC
+  mina      Mina Farouk · crew member · Artemis  mina@artemis.example  expires 2026-10-10 09:52 UTC
+  quin      Quin Abara · crew member · Artemis  quin@artemis.example  expires 2026-10-10 09:52 UTC
+
+$ mctl mission create --name "Europa Survey" --from 2027-03-01 --to 2027-03-20
+as Sam Okafor · mission lead · Artemis
+Created MSN-8 Europa Survey, 1–20 Mar 2027, as a draft.
+Next: mctl mission require MSN-8 --skill <skill> --level <level>
+
+$ mctl mission require MSN-8 --skill pilot --level 3
+as Sam Okafor · mission lead · Artemis
+MSN-8 needs 1 crew member with pilot at level 3 or above.
+Next: mctl match run MSN-8
+
+$ mctl mission require MSN-8 --skill medic --level 3
+as Sam Okafor · mission lead · Artemis
+MSN-8 needs 1 crew member with medic at level 3 or above.
+Next: mctl match run MSN-8
+
+$ mctl match run MSN-8                     # the proposal, with reasons; nothing changes yet
+as Sam Okafor · mission lead · Artemis
+MSN-8  Europa Survey  1–20 Mar 2027
+✓ 2 of 2 slots filled
+
+medic  level 3 or above
+  → Quin Abara CRW-7   score 82
+    level 3 (27 of 45) · 0 of 180 days assigned (35 of 35) · never flown (20 of 20)
+    alternates: Ada Reyes 87 (chosen for pilot), Mina Farouk 65, Kira Novak 61
+
+pilot  level 3 or above
+  → Ada Reyes CRW-1   score 91
+    level 5 (36 of 45) · 0 of 180 days assigned (35 of 35) · never flown (20 of 20)
+    alternates: Ben Osei 65, Cy Lindqvist 61
+
+Excluded with the skill:
+  CRW-4 Noor Haddad — medic certification expires 10 Mar, before the mission ends
+  CRW-5 Omar Vance — availability block AVL-1, 5–12 Mar
+
+Saved as RUN-1. Nothing has changed yet.
+  Apply it:      mctl match apply RUN-1
+  Pick another:  mctl assignment add MSN-8 --crew CRW-3 --skill medic
+
+$ mctl match apply RUN-1
+as Sam Okafor · mission lead · Artemis
+Applied RUN-1. MSN-8 has 2 of 2 slots filled.
+  medic: Quin Abara CRW-7, proposed (ASG-14)
+  pilot: Ada Reyes CRW-1, proposed (ASG-15)
+Next: mctl mission submit MSN-8
+
+$ mctl mission submit MSN-8
+as Sam Okafor · mission lead · Artemis
+Submitted MSN-8 for approval; its crew are held.
+Next (a director): mctl mission approve MSN-8
+
+$ mctl mission approve MSN-8               # refused with exit code 4: a mission lead cannot approve
+as Sam Okafor · mission lead · Artemis
+Error: Your role does not allow this.
+
+$ mctl mission approve MSN-8 --profile director
+as Dana Okoye · director · Artemis
+Approved MSN-8. Its crew are offered their places.
+Next: mctl mission show MSN-8
+
+$ mctl assignment list --profile quin      # the medic sees the offer
+as Quin Abara · crew member · Artemis
+ASG-14  MSN-8 Europa Survey  1–20 Mar 2027  medic  offered
+Next: mctl assignment accept ASG-14
+
+$ mctl assignment decline ASG-14 --reason "Medical leave" --profile quin
+as Quin Abara · crew member · Artemis
+Declined ASG-14: medic on MSN-8 Europa Survey.
+Next: mctl assignment list
+
+$ mctl match run MSN-8 --apply             # fills only the reopened slot
+as Sam Okafor · mission lead · Artemis
+MSN-8  Europa Survey  1–20 Mar 2027
+✓ 2 of 2 slots filled
+
+medic  level 3 or above
+  → Mina Farouk CRW-3   score 65
+    level 4 (32 of 45) · 71 of 180 days assigned (21 of 35) · 19 days rested (13 of 20)
+    alternates: Kira Novak 61
+
+Excluded with the skill:
+  CRW-4 Noor Haddad — medic certification expires 10 Mar, before the mission ends
+  CRW-5 Omar Vance — availability block AVL-1, 5–12 Mar
+  CRW-7 Quin Abara — declined MSN-8
+
+Applied RUN-2. MSN-8 has 2 of 2 slots filled.
+  medic: Mina Farouk CRW-3, offered (ASG-16)
+
+$ mctl assignment accept ASG-15 --profile ada
+as Ada Reyes · crew member · Artemis
+Accepted ASG-15: pilot on MSN-8 Europa Survey, 1–20 Mar 2027.
+Next: mctl mission show MSN-8
+
+$ mctl assignment accept ASG-16 --profile mina
+as Mina Farouk · crew member · Artemis
+Accepted ASG-16: medic on MSN-8 Europa Survey, 1–20 Mar 2027.
+Next: mctl mission show MSN-8
+
+$ mctl mission launch MSN-8
+as Sam Okafor · mission lead · Artemis
+Launched MSN-8; it is active.
+Next: mctl mission complete MSN-8
+
+$ mctl mission history MSN-8               # who did what, and when
+as Sam Okafor · mission lead · Artemis
+2026-10-03 09:52 UTC  submit   draft → submitted     Sam Okafor
+2026-10-03 09:52 UTC  approve  submitted → approved  Dana Okoye
+2026-10-03 09:52 UTC  launch   approved → active     Sam Okafor
 ```
-mctl login --org artemis --email dana@artemis.example --profile director
-mctl whoami --profile director
+
+Mina is the stronger medic, yet the matcher first chose Quin: Mina's time on Lunar Gateway Resupply, which ends 19 days before Europa Survey, costs her more in workload and rest than her extra level earns. That is the fairness trade-off of `DESIGN.md` section 6.4, on real data.
+
+### Act 2: a clash
+
+Two seeded drafts overlap and want the same pilot: Sam's Ceres Resupply and Priya Nair's Vesta Mapping. Neither can be submitted until one lets Ada go.
+
+```console
+$ mctl mission show MSN-4
+as Sam Okafor · mission lead · Artemis
+MSN-4  Ceres Resupply  3–24 May 2027
+draft · owner Sam Okafor
+Supplies for the Ceres outpost.
+
+2 of 2 slots filled
+engineer  level 4 or above
+  1 of 1  ASG-11  Noor Haddad CRW-4            proposed  chosen by Sam Okafor
+pilot  level 3 or above
+  1 of 1  ASG-10  Ada Reyes CRW-1              proposed  chosen by Sam Okafor  ✗ clash: also proposed on MSN-5 Vesta Mapping (draft, owner Priya Nair)
+Next: mctl assignment remove ASG-10
+
+$ mctl mission submit MSN-4                # refused with exit code 6, naming the clash
+as Sam Okafor · mission lead · Artemis
+Error: MSN-4 cannot be submitted: Ada Reyes CRW-1 is also proposed on MSN-5 Vesta Mapping (draft, Priya Nair).
+  Each problem must be resolved first: release the crew member, or change what blocks them.
+
+$ mctl assignment remove ASG-10 --yes      # let her go; without --yes it asks first
+as Sam Okafor · mission lead · Artemis
+Released ASG-10 from MSN-4.
+Next: mctl match run MSN-4
+
+$ mctl match run MSN-4 --apply
+as Sam Okafor · mission lead · Artemis
+MSN-4  Ceres Resupply  3–24 May 2027
+✓ 2 of 2 slots filled
+
+pilot  level 3 or above
+  → Ben Osei CRW-2   score 85
+    level 4 (32 of 45) · 8 of 180 days assigned (33 of 35) · 82 days rested (20 of 20)
+    alternates: Ada Reyes 87 (clash with MSN-5), Cy Lindqvist 80
+
+Applied RUN-3. MSN-4 has 2 of 2 slots filled.
+  pilot: Ben Osei CRW-2, proposed (ASG-17)
+Next: mctl mission submit MSN-4
+
+$ mctl mission submit MSN-4                # succeeds
+as Sam Okafor · mission lead · Artemis
+Submitted MSN-4 for approval; its crew are held.
+Next (a director): mctl mission approve MSN-4
 ```
+
+Ada scores higher than Ben, but the matcher passes her over: a clash-free full crew exists, so it makes none.
+
+### Act 3: another organisation sees nothing
+
+Farid Rahimi is a mission lead at Helios Labs. References resolve inside the caller's organisation, so Artemis's MSN-8 does not exist for him.
+
+```console
+$ mctl mission show MSN-8 --profile helios   # not found, exit code 5: MSN-8 is Artemis's
+as Farid Rahimi · mission lead · Helios Labs
+Error: MSN-8 was not found.
+
+$ mctl mission list --profile helios         # only Helios's missions
+as Farid Rahimi · mission lead · Helios Labs
+MSN-1  Solar Corona Probe  1–28 Feb 2027  submitted  Farid Rahimi  2 of 2 filled
+MSN-2  Mercury Flyby       5–26 Apr 2027  draft      Farid Rahimi  2 of 3 filled
+
+$ mctl crew list --profile helios            # only Helios's crew, with its own skill names
+as Farid Rahimi · mission lead · Helios Labs
+CRW-1  Anouk Petit   active  EVA 3; flight operations 5
+CRW-2  Bao Tran      active  flight operations 3; robotics 4
+CRW-3  Carmen Ruiz   active  field medicine 5
+CRW-4  Dev Malhotra  active  robotics 5; spectroscopy 3
+CRW-5  Elif Kaya     active  spectroscopy 5
+CRW-6  Finn Larsen   active  EVA 4; field medicine 3
+CRW-7  Grace Mbeki   active  EVA 4; robotics 3
+CRW-8  Hiro Tanaka   active  flight operations 2; spectroscopy 4
+```
+
+Every command takes `--json` for the API's raw answer, and `mctl --help` lists the rest: `crew list|show|add`, `crew skill set`, `availability add|list|remove`, `skill list`, `status`, `profile list|use`, `logout`, `mission list|show|unrequire|reject|cancel|complete`, `assignment add|remove|clear`, `match show`, `org show`. Seeded drafts worth a look: `mctl match run MSN-6` explains an unfilled slot, and `mctl match run MSN-7` shows why filling slot by slot would fail.
+
+Exit codes: `1` general, or the API cannot be reached; `2` usage or invalid input; `3` not logged in; `4` forbidden; `5` not found; `6` conflict, including a refused transition.
+
+## Tests
+
+```sh
+pnpm test            # unit tests; no database needed
+pnpm test:int        # integration and end-to-end tests, against a separate test database
+pnpm test:coverage   # both, with every file's uncovered lines
+pnpm lint            # lint, unused exports, files and dependencies, and words the glossary avoids
+pnpm build           # typecheck every package
+```
+
+`pnpm test:int` needs Postgres, which `pnpm demo:setup` starts; it uses its own database, so the demo data is untouched. CI runs all of them on every pull request.
+
+| Kind | Where | What it proves |
+|---|---|---|
+| Matcher | `packages/matcher`, unit | Each hard constraint and scorer; the case where filling slot by slot fails; a property test comparing the solver with brute force on small random inputs; the same input always gives the same result; the package imports nothing from the API |
+| Tenant isolation | `http/isolation.int.test.ts`, `http/tenant.int.test.ts`, `db/schema.int.test.ts` | A user of one organisation calls every route and finds nothing of the other: lists hold none of its rows, its references answer 404, and no response carries an internal id. A coverage test fails when a route is missing from that sweep. The database refuses a row that links to another organisation's row, and a refused request leaves no writes |
+| Lifecycle | `missions/lifecycle.int.test.ts`, `missions/approval.test.ts` | Every transition from every status by every role; nobody approves what they submitted; the approval policy with one and with two approvals required |
+| Double booking | `matching/clashes.int.test.ts`, `db/schema.int.test.ts` | Two transactions taking a hold on one crew member at once: exactly one succeeds. The booking rule holds in the database whatever the application does |
+| Proposals, clashes and holds | `matching/clashes.int.test.ts` | All seventeen scenarios of `DESIGN.md` section 10, numbered to match |
+| Seed | `db/seed.int.test.ts`, `matching/seed.int.test.ts` | The seed is sound, and the matcher gives the outcomes the walk-through relies on |
+| API | the other `*.int.test.ts` under `packages/api` | Each endpoint against real Postgres: answers, refusals and their codes, and locks that hold, each tested by holding the lock |
+| CLI | `packages/cli`, unit and integration | Output formats, profiles and prompts; every command against the real API as a separate process, and `--json` gives only JSON |
+| End to end | `cli/walkthrough.int.test.ts`, `cli/readme.int.test.ts` | The three acts through `mctl`, asserting exit codes and `--json` answers; and this README's walk-through, run as written twice, after `pnpm demo:reset` each time |
+| Code rules | `architecture.test.ts`, `glossary.test.ts` | Modules reach the database only through the request's transaction, services and repositories import no HTTP, and status changes only through the lifecycle; the code uses no word `CONTEXT.md` avoids |
+
+## What is built
+
+| | Item | State |
+|---|---|---|
+| Core | Multi-tenant API: login, tenant-scoped transactions, roles and the policy module | Built |
+| Core | Crew, skills and availability; the skill taxonomy, organisation settings and users seeded and read-only | Built |
+| Core | Missions, requirements and the lifecycle table, with the self-approval rule and the approval policy | Built |
+| Core | The matcher and its explanation; match runs, applying them, hand assignment, the proposal check, clashes and holds | Built |
+| Core | Accept and decline, and refilling a declined slot | Built |
+| Core | The CLI, `mctl`, with profiles and every primary workflow | Built |
+| Core | The tests of `DESIGN.md` section 10, the end-to-end walk-through, and the seed | Built |
+| Stretch | Row-level security policies | Not built yet ([#25](https://github.com/philvenegas/mission-control/issues/25)); the API's database role already cannot bypass them |
+| Stretch | `--pin` and `--exclude` on a match run | Not built yet ([#26](https://github.com/philvenegas/mission-control/issues/26)) |
+| Designed only | Organisation settings endpoints | Designed, not built: settings are seeded, and `mctl org show` reads them |
+| Designed only | The `withdraw` transition | Designed, not built |
+| Designed only | A minimum rest gap between missions | Designed, not built: rest is scored, not required |
 
 ## Where the build diverged from the design
 
-Each entry is added when the divergence happens. `DESIGN.md` is not edited.
+Each entry was added when the divergence happened, with its reason. `DESIGN.md` is not edited.
 
 - **Ben Osei is also on Lunar Gateway Resupply** (seed, design section 10). The design lists Kira, Leo, Cy and Mina. With Ben free, the Europa Survey walk-through has two crews of exactly equal total score (Ada as pilot with Quin as medic, or Ben as pilot with Ada as medic: 91 + 82 against 86.5 + 86.5), so the required outcome would rest on a tie-break. Ben's recent workload makes Ada and Quin the clear answer. The mission now needs two pilots.
 - **Seeded periods are stored exactly as the design writes them, with the end exclusive.** "1–20 Mar 2027" is stored as `[2027-03-01, 2027-03-20)`, following the glossary's definition of a period. This keeps Mina's rest before Europa Survey at the 19 days the design states.
@@ -111,3 +367,15 @@ Each entry is added when the divergence happens. `DESIGN.md` is not edited.
 - **`mission reject` and `mission cancel` take `--note` as a required option**, so a missing reason is a usage error (exit 2) before anything is asked, rather than a refusal from the API after the confirmation. Levels and counts must be whole numbers, also exit 2.
 - **What `mctl mission show` prints** (design section 8 gives its content, not its layout): the status, owner, submitter and approvals, then a heading per requirement and a line per slot, numbered "1 of 2", with the assignment's reference so it can be released. An open slot says so; a declined crew member is listed under the slots without a number, with their reason. A crew member sees only their own slot. `mission list` names each clash's crew member, other mission and its owner, and counts any other problems.
 - **`mctl org show` prints the match weights as the organisation stored them** (`proficiency 0.45`), not as shares of their sum, which is the matcher's working.
+- **The walk-through starts from `pnpm demo:reset` and `pnpm demo:login`** (design section 8 runs `pnpm demo:login` as act 1's first command). Its blocks hold only `mctl` commands and what they print, which `readme.int.test.ts` runs and compares; the six logins `pnpm demo:login` prints would bury the act's start.
+- **Act 2 releases Ada with `mctl assignment remove ASG-10 --yes`** (design section 8 leaves out `--yes`). The test runs the README with no terminal, where the command refuses to go ahead unasked; at a terminal it asks first, and the comment says so.
+- **The README's walk-through is a second end-to-end test.** Design section 10 asks for the walk-through as a scripted test; `walkthrough.int.test.ts` is that script, asserting outcomes through `--json`, and `readme.int.test.ts` runs the README's commands as written and compares what they print, twice, with `pnpm demo:reset` and `pnpm demo:login` before each pass. It stands in a fixed address (`http://localhost:3000`) for its own API's, and a placeholder for times, the only parts of the output that differ between runs.
+- **A reseed ends every login** (design section 8, "`pnpm demo:reset` reseeds"). It rebuilds the users, and a token's user must still exist, so `pnpm demo:login` follows `pnpm demo:reset`; a command run before it prints the command to log back in.
+
+## More
+
+- [`DESIGN.md`](DESIGN.md): the design this build follows, written before it.
+- [`CONTEXT.md`](CONTEXT.md): the glossary, whose terms the code, the API and the CLI use.
+- [`CODING_STANDARDS.md`](CODING_STANDARDS.md): how code is written here, each rule with its reason.
+- [`CHANGELOG.md`](CHANGELOG.md): what each change added, changed and fixed.
+- [`transcripts/`](transcripts/): the unedited AI transcripts of the design and the build.
