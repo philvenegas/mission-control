@@ -34,6 +34,10 @@ export const PLACED_ASSIGNMENT_STATUSES = ['proposed', ...LIVE_ASSIGNMENT_STATUS
  */
 export const CREW_VISIBLE_ASSIGNMENT_STATUSES = ['offered', 'accepted'] as const satisfies readonly AssignmentStatus[];
 
+/** The statuses in which a mission's crew can change: a draft plans, and an approved mission refills a slot. */
+export const STAFFABLE_MISSION_STATUSES = ['draft', 'approved'] as const satisfies readonly MissionStatus[];
+export const isStaffableStatus = (status: MissionStatus) => STAFFABLE_MISSION_STATUSES.some((staffable) => staffable === status);
+
 export const APPROVAL_DECISIONS = ['approve', 'reject'] as const;
 export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 

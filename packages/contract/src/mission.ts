@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { crewMemberSummarySchema } from './assignment.ts';
 import { ASSIGNMENT_STATUSES, MAX_LEVEL, MIN_LEVEL, MISSION_EVENT_TYPES, MISSION_STATUSES } from './domain.ts';
 import { endsAfterStart, isoDaySchema, PERIOD_ORDER } from './period.ts';
 import { nameSchema } from './text.ts';
@@ -15,8 +16,30 @@ const description = z.string().trim().max(MAX_DESCRIPTION_LENGTH);
 export const namedUserSchema = z.object({ name: z.string(), email: z.string() });
 export type NamedUser = z.infer<typeof namedUserSchema>;
 
-/** What a mission needs of one skill. Each unit of headcount is one slot. */
-export const requirementSchema = z.object({ skill: z.string(), min_level: level, headcount: z.number().int().min(1) });
+/**
+ * A crew member in one of a mission's slots, and where they came from: the match run that chose
+ * them, or nobody's run when `assigned_by` placed them by hand. Released assignments are not listed.
+ */
+export const missionCrewSchema = z.object({
+  assignment: z.string(),
+  crew_member: crewMemberSummarySchema,
+  status: z.enum(ASSIGNMENT_STATUSES),
+  /** From 0 to 1; null for crew the seed placed. */
+  score: z.number().nullable(),
+  match_run: z.string().nullable(),
+  /** Who applied the match run, or who assigned the crew member by hand. */
+  assigned_by: namedUserSchema,
+  decline_reason: z.string().nullable(),
+});
+export type MissionCrew = z.infer<typeof missionCrewSchema>;
+
+/** What a mission needs of one skill, and the crew in its slots. Each unit of headcount is one slot. */
+export const requirementSchema = z.object({
+  skill: z.string(),
+  min_level: level,
+  headcount: z.number().int().min(1),
+  crew: z.array(missionCrewSchema),
+});
 export type Requirement = z.infer<typeof requirementSchema>;
 
 /** A mission, as a director or a mission lead sees it. */

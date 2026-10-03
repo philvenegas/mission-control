@@ -1,16 +1,8 @@
 import { parseRef } from '@mission-control/contract';
+import { assessCandidate } from './assess.ts';
 import { type ConstraintFailure, failuresOf, HARD_CONSTRAINTS } from './constraints.ts';
-import {
-  assignmentsElsewhere,
-  type Consideration,
-  type CrewInput,
-  type MatchedMission,
-  type MatchInput,
-  type MissionSummary,
-  type RequirementInput,
-  type Slot,
-} from './input.ts';
-import { type Score, scoreCandidate } from './scorers.ts';
+import type { CrewInput, MatchedMission, MatchInput, MissionSummary, RequirementInput, Slot } from './input.ts';
+import type { Score } from './scorers.ts';
 import { solveAssignment } from './solver.ts';
 
 /** A crew member as an output names them. */
@@ -87,13 +79,6 @@ const openSlots = (requirements: readonly RequirementInput[]): Slot[] =>
     Array.from({ length: Math.max(0, headcount - filled) }, (_, index) => ({ skill, minLevel, number: filled + index + 1, headcount })),
   );
 
-/**
- * The other drafts over this period that propose the crew member: each a clash if they are chosen.
- * Only drafts clash: on a mission past draft, a proposal elsewhere is the other mission's problem.
- */
-const clashesOf = (crew: CrewInput, mission: MatchedMission): MissionSummary[] =>
-  mission.status === 'draft' ? assignmentsElsewhere(crew, mission, ['proposed']).map((assignment) => assignment.mission) : [];
-
 const lossReason = ([first]: ConstraintFailure[]): LossReason => {
   if (!first) return 'chosen_for_another_slot';
   if (first.constraint !== 'skill') return first.constraint;
@@ -137,17 +122,11 @@ export function match(input: MatchInput): MatchOutput {
 
   const rows = slots.map((slot) => ({
     slot,
-    pairings: crew.map((crewMember, column): Pairing => {
-      const consideration: Consideration = { crew: crewMember, need: slot, mission };
-      const failures = failuresOf(consideration);
-      return {
-        crew: crewMember,
-        column,
-        failures,
-        score: failures.length === 0 ? scoreCandidate(consideration, input.weights) : null,
-        clashes: clashesOf(crewMember, mission),
-      };
-    }),
+    pairings: crew.map((crewMember, column): Pairing => ({
+      crew: crewMember,
+      column,
+      ...assessCandidate({ crew: crewMember, need: slot, mission }, input.weights),
+    })),
   }));
 
   // DESIGN.md section 6.5: an S × (C + S) matrix of whole-number costs. Each slot has its own

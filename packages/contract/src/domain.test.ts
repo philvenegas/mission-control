@@ -5,10 +5,12 @@ import {
   DEFAULT_MATCH_WEIGHTS,
   DEFAULT_ORG_SETTINGS,
   isLiveStatus,
+  isStaffableStatus,
   LIVE_ASSIGNMENT_STATUSES,
   matchWeightsSchema,
   PLACED_ASSIGNMENT_STATUSES,
   MISSION_EVENT_TYPES,
+  MISSION_STATUSES,
   TRANSITIONS,
 } from './domain.ts';
 
@@ -30,6 +32,10 @@ describe('the shared domain values', () => {
 
   it('shows a crew member a mission once they are offered a place, never while they are only held', () => {
     expect(CREW_VISIBLE_ASSIGNMENT_STATUSES).toEqual(['offered', 'accepted']);
+  });
+
+  it('changes a mission\'s crew only while it is a draft, or approved and refilling a slot', () => {
+    expect(MISSION_STATUSES.filter(isStaffableStatus)).toEqual(['draft', 'approved']);
   });
 
   it('takes match weights as shares: none negative, and not all zero', () => {

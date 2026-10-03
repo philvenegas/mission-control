@@ -1,5 +1,5 @@
 import type { Period } from '@mission-control/contract';
-import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { availabilityBlocks, crewMembers } from '../../db/schema.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
@@ -11,6 +11,7 @@ function selectBlocks({ tx, orgId }: TenantContext, condition: SQL) {
       ref: availabilityBlocks.ref,
       period: availabilityBlocks.period,
       reason: availabilityBlocks.reason,
+      crewMemberId: availabilityBlocks.crewMemberId,
       crewMemberRef: crewMembers.ref,
       crewMemberUserId: crewMembers.userId,
     })
@@ -21,10 +22,16 @@ function selectBlocks({ tx, orgId }: TenantContext, condition: SQL) {
 
 export type AvailabilityBlockRow = Awaited<ReturnType<typeof selectBlocks>>[number];
 
-/** A crew member's availability blocks, earliest first. */
-export function listAvailabilityBlocks(context: TenantContext, crewMemberId: string): Promise<AvailabilityBlockRow[]> {
-  return selectBlocks(context, eq(availabilityBlocks.crewMemberId, crewMemberId)).orderBy(sql`lower(${availabilityBlocks.period})`, asc(availabilityBlocks.ref));
+/** The availability blocks of each of the given crew members, earliest first. */
+export function listAvailabilityBlocksOf(context: TenantContext, crewMemberIds: string[]): Promise<AvailabilityBlockRow[]> {
+  return selectBlocks(context, inArray(availabilityBlocks.crewMemberId, crewMemberIds)).orderBy(
+    sql`lower(${availabilityBlocks.period})`,
+    asc(availabilityBlocks.ref),
+  );
 }
+
+/** A crew member's availability blocks, earliest first. */
+export const listAvailabilityBlocks = (context: TenantContext, crewMemberId: string) => listAvailabilityBlocksOf(context, [crewMemberId]);
 
 export async function findAvailabilityBlockByRef(context: TenantContext, ref: number): Promise<AvailabilityBlockRow | undefined> {
   const [block] = await selectBlocks(context, eq(availabilityBlocks.ref, ref));
