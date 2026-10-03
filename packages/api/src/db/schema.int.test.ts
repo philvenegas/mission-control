@@ -11,6 +11,7 @@ import {
   EXCLUSION_VIOLATION,
   FOREIGN_KEY_VIOLATION,
   INSUFFICIENT_PRIVILEGE,
+  onlyRow,
 } from '../test/database.ts';
 import { parseDatabaseUrl } from './connection.ts';
 import * as schema from './schema.ts';
@@ -27,7 +28,8 @@ afterAll(async () => {
   await Promise.all([owner.client.end(), api.client.end()]);
 });
 
-const orgId = async (slug: string) => (await sql`SELECT id FROM organisations WHERE slug = ${slug}`)[0]!.id as string;
+const orgId = async (slug: string) =>
+  (await onlyRow(sql<{ id: string }[]>`SELECT id FROM organisations WHERE slug = ${slug}`, 'organisation')).id;
 
 /** An assignment of a crew member to a mission, in a slot of the mission named by `requirementOf`. */
 const assign = async (
@@ -37,39 +39,44 @@ const assign = async (
   ref: number,
   { requirementOf = missionName, period }: { requirementOf?: string; period?: string } = {},
 ) => {
-  const [mission] = await sql`SELECT id, org_id, period::text, owner_id FROM missions WHERE name = ${missionName}`;
-  const [requirement] = await sql`
-    SELECT r.id FROM mission_requirements r JOIN missions m ON m.id = r.mission_id WHERE m.name = ${requirementOf} LIMIT 1`;
-  const [crewMember] = await sql`SELECT id FROM crew_members WHERE name = ${crewMemberName}`;
+  const mission = await onlyRow(
+    sql`SELECT id, org_id, period::text, owner_id FROM missions WHERE name = ${missionName}`,
+    'mission',
+  );
+  const requirement = await onlyRow(
+    sql`SELECT r.id FROM mission_requirements r JOIN missions m ON m.id = r.mission_id WHERE m.name = ${requirementOf} LIMIT 1`,
+    'requirement',
+  );
+  const crewMember = await onlyRow(sql`SELECT id FROM crew_members WHERE name = ${crewMemberName}`, 'crew member');
   return sql`
     INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-    VALUES (${mission!.org_id}, ${ref}, ${mission!.id}, ${requirement!.id}, ${crewMember!.id},
-            ${period ?? mission!.period}, ${status}, ${mission!.owner_id})`;
+    VALUES (${mission.org_id}, ${ref}, ${mission.id}, ${requirement.id}, ${crewMember.id},
+            ${period ?? mission.period}, ${status}, ${mission.owner_id})`;
 };
 
 describe('one organisation cannot reference another', () => {
   it('rejects a row that links to another organisation\'s row', async () => {
     const helios = await orgId('helios');
-    const [dana] = await sql`SELECT id FROM users WHERE email = 'dana@artemis.example'`;
-    const [artemisMission] = await sql`SELECT id FROM missions WHERE name = 'Io Flyby'`;
-    const [heliosSkill] = await sql`SELECT id FROM skills WHERE org_id = ${helios} AND name = 'robotics'`;
-    const [farid] = await sql`SELECT id FROM users WHERE email = 'farid@helios.example'`;
+    const dana = await onlyRow(sql`SELECT id FROM users WHERE email = 'dana@artemis.example'`, 'user');
+    const artemisMission = await onlyRow(sql`SELECT id FROM missions WHERE name = 'Io Flyby'`, 'mission');
+    const heliosSkill = await onlyRow(sql`SELECT id FROM skills WHERE org_id = ${helios} AND name = 'robotics'`, 'skill');
+    const farid = await onlyRow(sql`SELECT id FROM users WHERE email = 'farid@helios.example'`, 'user');
 
     // A Helios crew member linked to an Artemis user.
     expect(
-      await errorCode(sql`INSERT INTO crew_members (org_id, ref, name, user_id) VALUES (${helios}, 99, 'Intruder', ${dana!.id})`),
+      await errorCode(sql`INSERT INTO crew_members (org_id, ref, name, user_id) VALUES (${helios}, 99, 'Intruder', ${dana.id})`),
     ).toBe(FOREIGN_KEY_VIOLATION);
     // A Helios requirement on an Artemis mission.
     expect(
       await errorCode(
-        sql`INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level) VALUES (${helios}, ${artemisMission!.id}, ${heliosSkill!.id}, 3)`,
+        sql`INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level) VALUES (${helios}, ${artemisMission.id}, ${heliosSkill.id}, 3)`,
       ),
     ).toBe(FOREIGN_KEY_VIOLATION);
     // A Helios mission owned by an Artemis user; the same mission with a Helios owner is fine.
     const mission = (ownerId: string) =>
       sql`INSERT INTO missions (org_id, ref, name, period, owner_id) VALUES (${helios}, 99, 'Probe', '[2028-01-01,2028-01-10)', ${ownerId})`;
-    expect(await errorCode(mission(dana!.id))).toBe(FOREIGN_KEY_VIOLATION);
-    expect(await errorCode(mission(farid!.id))).toBeNull();
+    expect(await errorCode(mission(dana.id))).toBe(FOREIGN_KEY_VIOLATION);
+    expect(await errorCode(mission(farid.id))).toBeNull();
   });
 
   it('has org_id on every table, and org_id in every foreign key', async () => {
@@ -119,8 +126,11 @@ describe('the booking rule', () => {
   });
 
   it('covers exactly the statuses the contract calls live', async () => {
-    const [rule] = await sql`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'no_double_booking'`;
-    const predicate = rule!.definition.slice(rule!.definition.indexOf('WHERE'));
+    const { definition } = await onlyRow(
+      sql`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conname = 'no_double_booking'`,
+      'booking rule',
+    );
+    const predicate = definition.slice(definition.indexOf('WHERE'));
     expect([...predicate.matchAll(/'(\w+)'/g)].map((match) => match[1])).toEqual([...LIVE_ASSIGNMENT_STATUSES]);
   });
 });
@@ -156,8 +166,8 @@ describe('an assignment belongs to one mission', () => {
 describe('values the database checks', () => {
   it('refuses a status, role, level or event type outside the contract', async () => {
     const artemis = await orgId('artemis');
-    const [mission] = await sql`SELECT id, owner_id FROM missions WHERE name = 'Io Flyby'`;
-    expect(await errorCode(sql`UPDATE missions SET status = 'paused' WHERE id = ${mission!.id}`)).toBe(CHECK_VIOLATION);
+    const mission = await onlyRow(sql`SELECT id, owner_id FROM missions WHERE name = 'Io Flyby'`, 'mission');
+    expect(await errorCode(sql`UPDATE missions SET status = 'paused' WHERE id = ${mission.id}`)).toBe(CHECK_VIOLATION);
     expect(await errorCode(sql`UPDATE users SET role = 'admin' WHERE org_id = ${artemis}`)).toBe(CHECK_VIOLATION);
     expect(await errorCode(sql`UPDATE crew_members SET status = 'retired' WHERE org_id = ${artemis}`)).toBe(CHECK_VIOLATION);
     expect(await errorCode(sql`UPDATE crew_skills SET level = 6 WHERE org_id = ${artemis}`)).toBe(CHECK_VIOLATION);
@@ -166,7 +176,7 @@ describe('values the database checks', () => {
     expect(await errorCode(sql`UPDATE assignments SET status = 'pending' WHERE org_id = ${artemis}`)).toBe(CHECK_VIOLATION);
     expect(await errorCode(sql`UPDATE mission_approvals SET decision = 'abstain' WHERE org_id = ${artemis}`)).toBe(CHECK_VIOLATION);
     const event = (type: string) =>
-      sql`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${artemis}, ${mission!.id}, ${mission!.owner_id}, ${type})`;
+      sql`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${artemis}, ${mission.id}, ${mission.owner_id}, ${type})`;
     expect(await errorCode(event('teleport'))).toBe(CHECK_VIOLATION);
     expect(await errorCode(event('clash'))).toBeNull();
   });
@@ -177,8 +187,11 @@ describe('values the database checks', () => {
   });
 
   it('gives a new organisation the default settings', async () => {
-    const [org] = await sql`INSERT INTO organisations (name, slug) VALUES ('Default Org', 'default-org') RETURNING settings`;
-    expect(org!.settings).toEqual(DEFAULT_ORG_SETTINGS);
+    const { settings } = await onlyRow(
+      sql`INSERT INTO organisations (name, slug) VALUES ('Default Org', 'default-org') RETURNING settings`,
+      'organisation',
+    );
+    expect(settings).toEqual(DEFAULT_ORG_SETTINGS);
   });
 });
 
@@ -200,10 +213,10 @@ describe('the API database role', () => {
   });
 
   it('can add to a mission\'s history and approvals but never rewrite them', async () => {
-    const [mission] = await sql`SELECT id, org_id, owner_id FROM missions WHERE name = 'Phobos Survey'`;
+    const mission = await onlyRow(sql`SELECT id, org_id, owner_id FROM missions WHERE name = 'Phobos Survey'`, 'mission');
     expect(
       await errorCode(
-        api.client`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${mission!.org_id}, ${mission!.id}, ${mission!.owner_id}, 'clash')`,
+        api.client`INSERT INTO mission_events (org_id, mission_id, actor_id, type) VALUES (${mission.org_id}, ${mission.id}, ${mission.owner_id}, 'clash')`,
       ),
     ).toBeNull();
     for (const table of ['mission_events', 'mission_approvals']) {

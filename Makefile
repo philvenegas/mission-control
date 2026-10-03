@@ -2,7 +2,7 @@
 # Each target wraps a pnpm script or a Docker command, so either form works.
 
 .DEFAULT_GOAL := help
-.PHONY: help install setup reset api build check test test-int test-all test-watch \
+.PHONY: help install setup reset api build lint check test test-int test-all test-watch coverage \
         db-up db-down db-logs db-migrate db-generate db-seed db-psql db-destroy
 
 API := pnpm --silent --filter @mission-control/api
@@ -34,7 +34,10 @@ api: ## Run the API (http://localhost:3000 unless PORT in .env says otherwise)
 build: ## Typecheck every package
 	pnpm build
 
-check: build test test-int ## Typecheck, then run every test
+lint: ## Lint (casts, non-null assertions) and find unused exports, files and dependencies
+	pnpm lint
+
+check: lint build test test-int ## Lint, typecheck, then run every test
 
 ##@ Tests
 
@@ -47,7 +50,10 @@ test-int: ## Integration tests, against the test database (needs Postgres up)
 test-all: test test-int ## Unit and integration tests
 
 test-watch: ## Unit tests, rerun on change
-	pnpm exec vitest
+	pnpm exec vitest --project unit
+
+coverage: ## Unit and integration tests, with each file's uncovered lines (needs Postgres up)
+	pnpm test:coverage
 
 ##@ Database
 

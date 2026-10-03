@@ -15,7 +15,9 @@ pnpm demo:reset      # reseed
 pnpm api             # run the API (port 3000, or PORT in .env)
 pnpm test            # unit tests; no database
 pnpm test:int        # integration tests, against the test database
+pnpm test:coverage   # both, with every file's uncovered lines
 pnpm build           # typecheck every package
+pnpm lint            # casts, `!`, unused exports and files
 ```
 
 After changing `packages/api/src/db/schema.ts`, run `pnpm --filter @mission-control/api db:generate`.

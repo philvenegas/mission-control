@@ -25,7 +25,10 @@ export function seedDate(day: number, baseDate = SEED_BASE_DATE): string {
 
 const seedPeriod = (fromDay: number, toDay: number) => ({ from: seedDate(fromDay), to: seedDate(toDay) });
 const seedTime = (day: number, hour: number) => new Date(Date.parse(SEED_BASE_DATE) + day * DAY + hour * 60 * 60 * 1000);
-const firstName = (name: string) => name.split(' ')[0]!;
+const firstName = (name: string) => {
+  const [first = name] = name.split(' ');
+  return first;
+};
 const reached = (mission: MissionSeed, status: MissionStatus) =>
   MISSION_STATUSES.indexOf(mission.status) >= MISSION_STATUSES.indexOf(status);
 
