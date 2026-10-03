@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; step 1 is done. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 4 are done. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
@@ -46,11 +46,18 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `pnpm lint`: ESLint with typescript-eslint, refusing type assertions other than `as const` and non-null assertions, plus knip, which finds unused exports, files and dependencies. CI runs it before the typecheck.
 - `pnpm test:coverage`: the unit and integration tests in one run, as two Vitest projects, reporting every file's uncovered lines. CI runs it in place of the integration tests and fails when coverage falls below the recorded thresholds.
 - The domain skill's definition of done now includes recording every divergence from the design in the README.
+- Missions: `GET`, `POST /v1/missions`; `GET`, `PATCH /v1/missions/:ref`; `GET /v1/missions/:ref/events`; `PUT`, `DELETE /v1/missions/:ref/requirements/:skill`. A mission is changed only while it is a draft, and a new period moves its assignments' periods in the same transaction.
+- The mission lifecycle: `POST /v1/missions/:ref/{submit,approve,reject,launch,complete,cancel}`, driven by one transition table. Each transition locks the mission, changes its status only from the one expected, moves its assignments (`proposed → held → offered`, `held → proposed`, `→ released`) and writes a history event, all in one transaction.
+- Approval by policy: a submission is approved once enough distinct directors have approved it (`approvalState`); the submitter can never approve or reject; a rejection ends the submission, so a resubmission starts from zero. Submit is refused when too few directors other than the submitter could approve.
+- A crew member sees only the missions they are offered or accepted on, and only their own slot.
+- Error codes `SELF_APPROVAL_FORBIDDEN`, `TRANSITION_NOT_ALLOWED`, `GUARD_FAILED`, `NOT_DRAFT` and `REQUIREMENT_STAFFED`.
+- A table-driven test of every transition, from every status, by every role.
 
 ### Fixed
 
 - Type assertions and non-null assertions in the seed and the tests, replaced by checked lookups (`onlyRow`) and contract schemas. Removing one exposed a mistyped isolation sweep entry, now typed to what a test caller returns.
 - `PERMISSIONS` and `CrewSeed` are no longer exported, as nothing outside their files uses them.
 - A stored password hash cut short is now covered by a test.
+- Listing crew skills no longer special-cases an empty list of crew; the query handles it.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

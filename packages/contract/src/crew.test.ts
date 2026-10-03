@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createAvailabilityBlockSchema,
   createCrewMemberSchema,
-  MAX_NAME_LENGTH,
   MAX_REASON_LENGTH,
   setCrewSkillSchema,
   updateCrewMemberSchema,
 } from './crew.ts';
+import { MAX_NAME_LENGTH } from './text.ts';
 
 const accepts = (schema: { safeParse(value: unknown): { success: boolean } }, value: unknown) => schema.safeParse(value).success;
 

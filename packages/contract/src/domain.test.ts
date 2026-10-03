@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ASSIGNMENT_STATUSES,
+  CREW_VISIBLE_ASSIGNMENT_STATUSES,
   DEFAULT_MATCH_WEIGHTS,
   DEFAULT_ORG_SETTINGS,
   LIVE_ASSIGNMENT_STATUSES,
@@ -17,6 +18,10 @@ describe('the shared domain values', () => {
       'declined',
       'released',
     ]);
+  });
+
+  it('shows a crew member a mission once they are offered a place, never while they are only held', () => {
+    expect(CREW_VISIBLE_ASSIGNMENT_STATUSES).toEqual(['offered', 'accepted']);
   });
 
   it('records every transition in a mission\'s history, plus a clash', () => {
