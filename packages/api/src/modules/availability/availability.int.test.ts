@@ -23,7 +23,7 @@ const blocks = async (caller: Caller, crewMember: string) =>
 const block = async (response: Response) => bodyOf(response, availabilityBlockSchema);
 const error = async (response: Response) => ({ status: response.status, ...(await bodyOf(response, errorResponseSchema)).error });
 const leave = { from: '2027-08-02', to: '2027-08-16', reason: 'Leave' };
-const seededBlocks = (SEED_ORGS[0]?.crew ?? []).flatMap((member) => member.blocks ?? []).length;
+const seededBlocks = (SEED_ORGS[0]?.crew ?? []).flatMap((crewMember) => crewMember.blocks ?? []).length;
 
 describe('reading availability', () => {
   it("lists a crew member's blocks, earliest first, to a director and a mission lead", async () => {
