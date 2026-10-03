@@ -14,6 +14,7 @@
   "dependencies": {
     "@hono/node-server": "^2.1.3",
     "@mission-control/contract": "workspace:*",
+    "@mission-control/matcher": "workspace:*",
     "drizzle-orm": "^0.45.3",
     "hono": "^4.13.12",
     "postgres": "^3.4.9",

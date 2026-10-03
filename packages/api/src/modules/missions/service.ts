@@ -3,7 +3,9 @@ import {
   type CrewMission,
   formatRef,
   type Mission,
+  type MissionCrew,
   type MissionEvent,
+  type MissionStatus,
   type SetRequirement,
   type Transition,
   type UpdateMission,
@@ -13,6 +15,7 @@ import { exactlyOne } from '../../db/rows.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden, notFound } from '../../errors.ts';
+import { listMissionCrew, type MissionCrewRow } from '../assignments/repository.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
 import { runTransition } from './lifecycle.ts';
@@ -28,6 +31,7 @@ import {
   listMissions,
   listRequirements,
   listStaffedMissions,
+  lockMission,
   type MissionRow,
   updateMission,
   upsertRequirement,
@@ -36,10 +40,21 @@ import {
 /** Whether the caller reads missions as a crew member does: only those they are offered or accepted on. */
 const readsOwnMissions = (context: TenantContext) => scopeOf(context.role, 'missions:read') === 'own';
 
+const toMissionCrew = (assignment: MissionCrewRow): MissionCrew => ({
+  assignment: formatRef('assignment', assignment.ref),
+  crew_member: { ref: formatRef('crew_member', assignment.crewMember.ref), name: assignment.crewMember.name },
+  status: assignment.status,
+  score: assignment.score,
+  match_run: assignment.matchRunRef === null ? null : formatRef('match_run', assignment.matchRunRef),
+  assigned_by: assignment.assignedBy,
+  decline_reason: assignment.declineReason,
+});
+
 async function toMissions(context: TenantContext, rows: MissionRow[]): Promise<Mission[]> {
   const ids = rows.map((row) => row.id);
-  const [requirements, decisions, { settings }] = await Promise.all([
+  const [requirements, crew, decisions, { settings }] = await Promise.all([
     listRequirements(context, ids),
+    listMissionCrew(context, ids),
     listCurrentDecisions(context, ids),
     getOrganisation(context),
   ]);
@@ -54,7 +69,12 @@ async function toMissions(context: TenantContext, rows: MissionRow[]): Promise<M
     submitted_by: row.submittedBy,
     requirements: requirements
       .filter((requirement) => requirement.missionId === row.id)
-      .map((requirement) => ({ skill: requirement.skill, min_level: requirement.minLevel, headcount: requirement.headcount })),
+      .map((requirement) => ({
+        skill: requirement.skill,
+        min_level: requirement.minLevel,
+        headcount: requirement.headcount,
+        crew: crew.filter((assignment) => assignment.requirementId === requirement.id).map(toMissionCrew),
+      })),
     approval: {
       required: settings.approvals_required,
       approved_by:
@@ -112,7 +132,7 @@ export async function showMission(context: TenantContext, missionRef: string): P
 }
 
 /** The full view of a mission, read afresh. */
-async function describeMission(context: TenantContext, mission: MissionRow): Promise<Mission> {
+export async function describeMission(context: TenantContext, mission: MissionRow): Promise<Mission> {
   return exactlyOne(await toMissions(context, [await getMissionByRef(context, mission.ref)]), 'mission');
 }
 
@@ -126,6 +146,33 @@ export async function createMission(context: TenantContext, input: CreateMission
     ownerId: context.userId,
   });
   return describeMission(context, await getMissionByRef(context, ref));
+}
+
+/** The statuses in which a mission's crew can change: a draft plans, and an approved mission refills a slot. */
+const STAFFABLE_STATUSES: readonly MissionStatus[] = ['draft', 'approved'];
+
+/**
+ * Locks a mission whose crew is about to change, so two changes to it run one after the other, and
+ * gives it as it now is. Refused unless its status lets its crew change.
+ */
+export async function lockMissionForCrewChange(context: TenantContext, visible: MissionRow): Promise<MissionRow> {
+  await lockMission(context, visible.id);
+  const mission = await getMissionByRef(context, visible.ref);
+  if (!STAFFABLE_STATUSES.includes(mission.status)) {
+    const ref = formatRef('mission', mission.ref);
+    throw new DomainError(
+      'NOT_STAFFABLE',
+      `${ref} is ${mission.status}, so its crew cannot change.`,
+      'Crew change while a mission is a draft, or to refill a slot once it is approved.',
+    );
+  }
+  return mission;
+}
+
+/** A mission whose crew the caller may change, with its row lock taken for the change. */
+export async function resolveMissionForCrewChange(context: TenantContext, missionRef: string): Promise<MissionRow> {
+  const mission = await resolveMissionToAct(context, missionRef, 'missions:assign-crew', `Only ${missionRef}'s owner or a director can change its crew.`);
+  return lockMissionForCrewChange(context, mission);
 }
 
 /** A draft the caller may edit. Any other status is refused: what is approved is what was submitted. */

@@ -47,6 +47,12 @@ const PERMISSIONS = {
   'missions:cancel': { director: 'all', mission_lead: 'own' },
   /** Cancel a mission that is under way. */
   'missions:cancel-active': { director: 'all' },
+  /** Run the matcher, see and apply a match run, assign crew by hand, and release them. */
+  'missions:assign-crew': { director: 'all', mission_lead: 'own' },
+  /** List your own offered and accepted assignments. */
+  'assignments:read': { crew_member: 'own' },
+  /** Accept or decline your own offered assignment. */
+  'assignments:respond': { crew_member: 'own' },
 } as const satisfies Record<string, Partial<Record<Role, Scope>>>;
 
 export type Permission = keyof typeof PERMISSIONS;

@@ -53,7 +53,18 @@ describe('reading missions', () => {
       status: 'submitted',
       owner: PRIYA,
       submitted_by: PRIYA,
-      requirements: [{ skill: 'medic', min_level: 3, headcount: 2 }],
+      requirements: [
+        {
+          skill: 'medic',
+          min_level: 3,
+          headcount: 2,
+          // Held for Phobos Survey while it awaits approval. The seed placed them, not a match run.
+          crew: [
+            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-3', name: 'Mina Farouk' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null },
+            { assignment: expect.stringMatching(/^ASG-\d+$/), crew_member: { ref: 'CRW-7', name: 'Quin Abara' }, status: 'held', score: null, match_run: null, assigned_by: PRIYA, decline_reason: null },
+          ],
+        },
+      ],
       approval: { required: 1, approved_by: [] },
     });
   });
@@ -115,11 +126,11 @@ describe('creating and changing a mission', () => {
     // Setting a skill again replaces its requirement.
     const changed = await mission(await sam.put(`/v1/missions/${ref}/requirements/medic`, { min_level: 4 }));
     expect(changed.requirements).toEqual([
-      { skill: 'medic', min_level: 4, headcount: 1 },
-      { skill: 'pilot', min_level: 3, headcount: 1 },
+      { skill: 'medic', min_level: 4, headcount: 1, crew: [] },
+      { skill: 'pilot', min_level: 3, headcount: 1, crew: [] },
     ]);
     expect((await mission(await sam.delete(`/v1/missions/${ref}/requirements/medic`))).requirements).toEqual([
-      { skill: 'pilot', min_level: 3, headcount: 1 },
+      { skill: 'pilot', min_level: 3, headcount: 1, crew: [] },
     ]);
     expect(await error(await sam.delete(`/v1/missions/${ref}/requirements/medic`))).toMatchObject({
       status: 404,

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 5 are done. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 5 are done, and the first half of step 6. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
@@ -58,6 +58,14 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - Match weights must not be negative, and must not all be zero.
 - `PLACED_ASSIGNMENT_STATUSES` and `isLiveStatus` in the contract, for the statuses that put a crew member in a slot and those that hold them.
 - `test/arrange.ts`: one way for tests to arrange missions and crew the API cannot yet create, taking references from the organisation's counters.
+- Match runs: `POST /v1/missions/:ref/match` runs the matcher over a mission's open slots with the organisation's weights and saves the proposal and its explanation as `RUN-n`, changing nothing else; `GET /v1/match-runs/:ref` shows it to the mission's owner and directors; `POST /v1/match-runs/:ref/apply` turns it into assignments, all or nothing and once, after checking every chosen crew member again. A run that would make a clash needs `allow_clashes`.
+- Hand assignment: `POST /v1/missions/:ref/assignments` puts a named crew member in an open slot under the same hard constraints and reasons as the matcher, with no override; `DELETE /v1/assignments/:ref` releases one crew member; `DELETE /v1/missions/:ref/assignments` releases a draft's proposals.
+- Crew are proposed on a draft and offered on an approved mission, and each assignment records its match run or who assigned it, and its score. A mission's response lists the crew in each requirement.
+- Responding: `GET /v1/assignments` lists a crew member's own offered and accepted assignments; `POST /v1/assignments/:ref/{accept,decline}` answer their own offer, a decline with an optional reason. A decline reopens the slot, and the matcher never chooses that crew member for the mission again.
+- Error codes `NOT_STAFFABLE`, `NO_OPEN_SLOT`, `HARD_CONSTRAINT_FAILED`, `RUN_ALREADY_APPLIED`, `RUN_OUT_OF_DATE`, `CLASH_NOT_ALLOWED` and `WRONG_ASSIGNMENT_STATUS`.
+- `assessCandidate` in the matcher: one crew member weighed for one slot, shared by the matcher, hand assignment and applying a run.
+- A test runs the matcher over the seed and checks the outcomes the design names: Titan Relay's unfilled geologist slot with its reasons, Ben and Ada on Io Flyby, and Ada, Quin and then Mina on Europa Survey.
+- The isolation sweep covers the new routes, calling the crew-only ones as a crew member of each organisation.
 
 ### Fixed
 

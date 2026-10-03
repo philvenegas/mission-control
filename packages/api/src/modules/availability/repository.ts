@@ -1,5 +1,5 @@
 import type { Period } from '@mission-control/contract';
-import { and, asc, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { availabilityBlocks, crewMembers } from '../../db/schema.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
@@ -24,6 +24,15 @@ export type AvailabilityBlockRow = Awaited<ReturnType<typeof selectBlocks>>[numb
 /** A crew member's availability blocks, earliest first. */
 export function listAvailabilityBlocks(context: TenantContext, crewMemberId: string): Promise<AvailabilityBlockRow[]> {
   return selectBlocks(context, eq(availabilityBlocks.crewMemberId, crewMemberId)).orderBy(sql`lower(${availabilityBlocks.period})`, asc(availabilityBlocks.ref));
+}
+
+/** The availability blocks of each of the given crew members, earliest first. */
+export function listAvailabilityBlocksOf(context: TenantContext, crewMemberIds: string[]) {
+  return context.tx
+    .select({ crewMemberId: availabilityBlocks.crewMemberId, ref: availabilityBlocks.ref, period: availabilityBlocks.period })
+    .from(availabilityBlocks)
+    .where(and(eq(availabilityBlocks.orgId, context.orgId), inArray(availabilityBlocks.crewMemberId, crewMemberIds)))
+    .orderBy(sql`lower(${availabilityBlocks.period})`, asc(availabilityBlocks.ref));
 }
 
 export async function findAvailabilityBlockByRef(context: TenantContext, ref: number): Promise<AvailabilityBlockRow | undefined> {

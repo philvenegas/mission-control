@@ -7,8 +7,10 @@ import { type TokenSettings, verifyToken } from '../auth/token.ts';
 import type { Database } from '../db/connection.ts';
 import { withTenant } from '../db/tenant.ts';
 import { DomainError, forbidden, internal, notFound, unauthenticated } from '../errors.ts';
+import { assignmentRoutes } from '../modules/assignments/routes.ts';
 import { availabilityRoutes } from '../modules/availability/routes.ts';
 import { crewRoutes } from '../modules/crew/routes.ts';
+import { matchingRoutes } from '../modules/matching/routes.ts';
 import { missionRoutes } from '../modules/missions/routes.ts';
 import { orgRoutes } from '../modules/org/routes.ts';
 import { skillRoutes } from '../modules/skills/routes.ts';
@@ -27,7 +29,7 @@ export interface AppDependencies {
   onUnexpectedError?: (error: unknown) => void;
 }
 
-const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRoutes, ...availabilityRoutes, ...missionRoutes];
+const ROUTES: Route[] = [...userRoutes, ...orgRoutes, ...skillRoutes, ...crewRoutes, ...availabilityRoutes, ...missionRoutes, ...matchingRoutes, ...assignmentRoutes];
 
 /** Thrown inside the request's transaction to roll it back after the response has been decided. */
 const ROLL_BACK = Symbol('roll back');
