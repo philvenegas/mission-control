@@ -1,4 +1,6 @@
 import type { ConstraintFailureResponse, CrewMemberSummary, MissionStatus } from '@mission-control/contract';
+import type { ConstraintFailure } from '@mission-control/matcher';
+import { toFailureResponse } from './result.ts';
 
 // Why a crew member cannot fill a slot, in words, for the refusals the API gives: a hand assignment
 // and an applied match run give the same reasons as the matcher, because they come from the same check.
@@ -10,8 +12,12 @@ export const nameCrewMember = ({ ref, name }: CrewMemberSummary) => `${name} ${r
 export const nameMission = ({ ref, name, status, owner }: { ref: string; name: string; status: MissionStatus; owner: string }) =>
   `${ref} ${name} (${status}, ${owner})`;
 
+/** Every hard constraint a crew member failed for a slot, each as a sentence about them. */
+export const reasonsFor = (crewMember: CrewMemberSummary, skill: string, failures: ConstraintFailure[]) =>
+  failures.map((failure) => describeFailure(crewMember, skill, toFailureResponse(failure)));
+
 /** One failed hard constraint, as a sentence about the crew member. */
-export function describeFailure(crewMember: CrewMemberSummary, skill: string, failure: ConstraintFailureResponse): string {
+function describeFailure(crewMember: CrewMemberSummary, skill: string, failure: ConstraintFailureResponse): string {
   const who = nameCrewMember(crewMember);
   switch (failure.constraint) {
     case 'active':

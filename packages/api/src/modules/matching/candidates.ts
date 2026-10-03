@@ -1,10 +1,10 @@
 import { formatRef, PLACED_ASSIGNMENT_STATUSES } from '@mission-control/contract';
 import type { CrewInput, MatchedMission, RequirementInput } from '@mission-control/matcher';
 import type { TenantContext } from '../../db/tenant.ts';
-import { listAssignmentsOfCrew, type MissionCrewRow } from '../assignments/repository.ts';
+import { listAssignmentsOfCrew, listMissionCrew, type MissionCrewRow } from '../assignments/repository.ts';
 import { listAvailabilityBlocksOf } from '../availability/repository.ts';
 import { type CrewMemberRow, listCrewSkills } from '../crew/repository.ts';
-import type { MissionRow } from '../missions/repository.ts';
+import { listRequirements, type MissionRow } from '../missions/repository.ts';
 
 // What the matcher is given, gathered from the database: the mission, its requirements with how
 // many of their slots are filled, and each crew member's skills, availability and assignments.
@@ -19,7 +19,7 @@ export const matchedMission = (mission: MissionRow): MatchedMission => ({
 const isPlaced = (crew: MissionCrewRow) => PLACED_ASSIGNMENT_STATUSES.some((status) => status === crew.status);
 
 /** A mission's requirements, each with how many of its slots crew already fill. */
-export const requirementInputs = (
+const requirementInputs = (
   requirements: { id: string; skill: string; minLevel: number; headcount: number }[],
   missionCrew: MissionCrewRow[],
 ): (RequirementInput & { id: string })[] =>
@@ -30,6 +30,12 @@ export const requirementInputs = (
     headcount: requirement.headcount,
     filled: missionCrew.filter((crew) => crew.requirementId === requirement.id && isPlaced(crew)).length,
   }));
+
+/** What a mission needs now, each requirement with how many of its slots are filled. */
+export async function currentRequirements(context: TenantContext, mission: MissionRow) {
+  const [requirements, missionCrew] = await Promise.all([listRequirements(context, [mission.id]), listMissionCrew(context, [mission.id])]);
+  return requirementInputs(requirements, missionCrew);
+}
 
 /** The crew members, as the matcher weighs them: their skills, availability blocks and every assignment. */
 export async function crewInputs(context: TenantContext, crew: CrewMemberRow[]): Promise<(CrewInput & { id: string })[]> {

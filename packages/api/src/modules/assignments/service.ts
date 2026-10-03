@@ -12,21 +12,23 @@ import { reaches } from '../../auth/policy.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
-import { DomainError, forbidden, notFound } from '../../errors.ts';
+import { DomainError, notFound } from '../../errors.ts';
 import { resolveCrewMember } from '../crew/service.ts';
-import { crewInputs, matchedMission, requirementInputs } from '../matching/candidates.ts';
-import { describeFailure, nameCrewMember } from '../matching/reasons.ts';
-import { toFailureResponse } from '../matching/result.ts';
-import { getMissionByRef, listRequirements, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
+import { crewInputs, currentRequirements, matchedMission } from '../matching/candidates.ts';
+import { nameCrewMember, reasonsFor } from '../matching/reasons.ts';
+import { getMissionByRef, listStaffedMissions, type MissionRow, moveAssignments } from '../missions/repository.ts';
 import { describeMission, lockMissionForCrewChange, resolveMissionForCrewChange } from '../missions/service.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
-import { findAssignmentByRef, insertAssignment, listMissionCrew, moveAssignment } from './repository.ts';
+import { findAssignmentByRef, insertAssignment, moveAssignment } from './repository.ts';
 
 /** A crew member placed on a draft is proposed; one placed on an approved mission, refilling a slot, is offered. */
 const placedStatus = (mission: MissionRow): AssignmentStatus => (mission.status === 'draft' ? 'proposed' : 'offered');
 
-/** Puts a crew member in one of a mission's slots, from a match run or by hand. The caller holds the mission's row lock, and its status lets its crew change. */
+/**
+ * Puts a crew member in one of a mission's slots, from a match run or by hand. The caller holds the
+ * mission's row lock, and its status lets its crew change.
+ */
 export async function placeCrewMember(
   context: TenantContext,
   mission: MissionRow,
@@ -45,8 +47,7 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
   const mission = await resolveMissionForCrewChange(context, missionRef);
   const skill = await getSkill(context, input.skill);
   const crewMember = await resolveCrewMember(context, input.crew_member, 'crew:read');
-  const [requirements, missionCrew] = await Promise.all([listRequirements(context, [mission.id]), listMissionCrew(context, [mission.id])]);
-  const requirement = requirementInputs(requirements, missionCrew).find((each) => each.skill === skill.name);
+  const requirement = (await currentRequirements(context, mission)).find((each) => each.skill === skill.name);
   if (!requirement) throw notFound(`${missionRef}'s ${skill.name} requirement`);
   if (requirement.filled >= requirement.headcount) {
     throw new DomainError(
@@ -61,10 +62,9 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
   const { failures, score } = assessCandidate({ crew: candidate, need: requirement, mission: matchedMission(mission) }, settings.match_weights);
   // A score is given exactly when no hard constraint fails.
   if (score === null) {
-    const reasons = failures.map((failure) => describeFailure(candidate, skill.name, toFailureResponse(failure)));
     throw new DomainError(
       'HARD_CONSTRAINT_FAILED',
-      `${nameCrewMember(candidate)} cannot be assigned as ${skill.name} on ${missionRef}: ${reasons.join('; ')}.`,
+      `${nameCrewMember(candidate)} cannot be assigned as ${skill.name} on ${missionRef}: ${reasonsFor(candidate, skill.name, failures).join('; ')}.`,
       'Nobody can assign against a hard constraint. Change the record that blocks it instead.',
     );
   }
@@ -76,10 +76,7 @@ export async function assignByHand(context: TenantContext, missionRef: string, i
 async function resolveAssignmentForCrewChange(context: TenantContext, assignmentRef: string) {
   const assignment = await findAssignmentByRef(context, refNumber('assignment', assignmentRef));
   if (!assignment) throw notFound(assignmentRef);
-  const visible = await getMissionByRef(context, assignment.missionRef);
-  const missionRef = formatRef('mission', visible.ref);
-  if (!reaches(context, 'missions:assign-crew', visible.ownerId)) throw forbidden(`Only ${missionRef}'s owner or a director can change its crew.`);
-  return { assignment, mission: await lockMissionForCrewChange(context, visible) };
+  return { assignment, mission: await lockMissionForCrewChange(context, await getMissionByRef(context, assignment.missionRef)) };
 }
 
 /**
@@ -114,6 +111,11 @@ export async function listOwnAssignments(context: TenantContext): Promise<CrewAs
   }));
 }
 
+/** A crew member's answer to an offer: the status it moves to, and for a decline, why. */
+type CrewResponse = { to: 'accepted' } | { to: 'declined'; reason: string | null };
+
+const isCrewVisible = (status: AssignmentStatus) => CREW_VISIBLE_ASSIGNMENT_STATUSES.some((visible) => visible === status);
+
 /**
  * A crew member accepting or declining their own offered assignment. One that is not theirs, or that
  * they cannot see (proposed or held), is not found.
@@ -121,11 +123,10 @@ export async function listOwnAssignments(context: TenantContext): Promise<CrewAs
 export async function respondToAssignment(
   context: TenantContext,
   assignmentRef: string,
-  response: { to: 'accepted' } | { to: 'declined'; reason: string | null },
+  response: CrewResponse,
 ): Promise<CrewAssignment> {
   const assignment = await findAssignmentByRef(context, refNumber('assignment', assignmentRef));
-  const visible = (status: AssignmentStatus) => CREW_VISIBLE_ASSIGNMENT_STATUSES.some((each) => each === status);
-  if (!assignment || !reaches(context, 'assignments:respond', assignment.crewMemberUserId) || !visible(assignment.status)) {
+  if (!assignment || !reaches(context, 'assignments:respond', assignment.crewMemberUserId) || !isCrewVisible(assignment.status)) {
     throw notFound(assignmentRef);
   }
   const reason = response.to === 'declined' ? response.reason : null;

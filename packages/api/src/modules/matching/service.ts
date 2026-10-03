@@ -12,17 +12,17 @@ import { refNumber, takeNextRef } from '../../db/refs.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, notFound } from '../../errors.ts';
-import { listMissionCrew } from '../assignments/repository.ts';
 import { placeCrewMember } from '../assignments/service.ts';
 import { listCrewMembers } from '../crew/repository.ts';
-import { getMissionByRef, listRequirements, type MissionRow } from '../missions/repository.ts';
+import { getMissionByRef } from '../missions/repository.ts';
 import { describeMission, lockMissionForCrewChange, resolveMissionForCrewChange } from '../missions/service.ts';
 import { getOrganisation } from '../org/repository.ts';
-import { crewInputs, matchedMission, requirementInputs } from './candidates.ts';
-import { describeFailure, nameCrewMember, nameMission } from './reasons.ts';
+import { crewInputs, currentRequirements, matchedMission } from './candidates.ts';
+import { nameCrewMember, nameMission, reasonsFor } from './reasons.ts';
 import { findMatchRunByRef, insertMatchRun, markApplied, type MatchRunRow } from './repository.ts';
-import { toFailureResponse, toMatchRunResult } from './result.ts';
+import { toMatchRunResult } from './result.ts';
 
+/** A saved run as the API gives it: who made it and when, the weights in force, and what it proposed. */
 const toMatchRun = (run: MatchRunRow, result: MatchRunResult): MatchRun => ({
   ref: formatRef('match_run', run.ref),
   mission: formatRef('mission', run.missionRef),
@@ -32,12 +32,6 @@ const toMatchRun = (run: MatchRunRow, result: MatchRunResult): MatchRun => ({
   weights: run.weights,
   ...result,
 });
-
-/** What the mission needs now, each requirement with how many of its slots are filled. */
-async function currentRequirements(context: TenantContext, mission: MissionRow) {
-  const [requirements, missionCrew] = await Promise.all([listRequirements(context, [mission.id]), listMissionCrew(context, [mission.id])]);
-  return requirementInputs(requirements, missionCrew);
-}
 
 /**
  * Runs the matcher over a mission's open slots and saves what it proposes as a match run. Nothing
@@ -64,6 +58,7 @@ async function resolveMatchRun(context: TenantContext, runRef: string): Promise<
   return run;
 }
 
+/** A match run, to the mission's owner and directors. */
 export async function showMatchRun(context: TenantContext, runRef: string): Promise<MatchRun> {
   const run = await resolveMatchRun(context, runRef);
   return toMatchRun(run, matchRunResultSchema.parse(run.result));
@@ -76,10 +71,13 @@ export async function showMatchRun(context: TenantContext, runRef: string): Prom
  * `allow_clashes`. A run applies once.
  */
 export async function applyMatchRun(context: TenantContext, runRef: string, { allow_clashes: allowClashes }: ApplyMatchRun): Promise<Mission> {
-  const visible = await resolveMatchRun(context, runRef);
-  const mission = await lockMissionForCrewChange(context, await getMissionByRef(context, visible.missionRef));
+  const { missionRef: missionNumber } = await resolveMatchRun(context, runRef);
+  const mission = await lockMissionForCrewChange(context, await getMissionByRef(context, missionNumber));
+  // Read again under the lock, so a run another request has just applied is seen as applied.
   const run = await resolveMatchRun(context, runRef);
-  if (run.appliedAt !== null) throw alreadyApplied(runRef);
+  if (run.appliedAt !== null) {
+    throw new DomainError('RUN_ALREADY_APPLIED', `${runRef} has already been applied.`, 'Run the matcher again for a new proposal.');
+  }
 
   const missionRef = formatRef('mission', mission.ref);
   const requirements = await currentRequirements(context, mission);
@@ -103,7 +101,7 @@ export async function applyMatchRun(context: TenantContext, runRef: string, { al
     }
     const candidate = exactlyOne(crew.filter((each) => each.ref === crewMember.ref), 'crew member');
     const assessment = assessCandidate({ crew: candidate, need: requirement, mission: matchedMission(mission) }, settings.match_weights);
-    problems.push(...assessment.failures.map((failure) => describeFailure(crewMember, skill, toFailureResponse(failure))));
+    problems.push(...reasonsFor(crewMember, skill, assessment.failures));
     if (assessment.clashes.length > 0) {
       clashes.push(`${nameCrewMember(crewMember)}, who is also proposed on ${assessment.clashes.map(nameMission).join(' and ')}`);
     }
@@ -123,8 +121,6 @@ export async function applyMatchRun(context: TenantContext, runRef: string, { al
   for (const assignment of newAssignments) {
     await placeCrewMember(context, mission, { ...assignment, matchRunId: run.id });
   }
-  if (!(await markApplied(context, run.id))) throw alreadyApplied(runRef);
+  await markApplied(context, run.id);
   return describeMission(context, mission);
 }
-
-const alreadyApplied = (runRef: string) => new DomainError('RUN_ALREADY_APPLIED', `${runRef} has already been applied.`, 'Run the matcher again for a new proposal.');

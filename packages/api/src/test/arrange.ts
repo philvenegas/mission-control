@@ -37,6 +37,12 @@ export function dayAfter(first: string, index: number): Period {
   return { from: day(index), to: day(index + 1) };
 }
 
+/** Five days starting on day `7 × index` of 2031: each index has a week of its own, clear of the seed's periods. */
+export function weekOf2031(index: number): Period {
+  const { from } = dayAfter('2031-01-01', 7 * index);
+  return { from, to: dayAfter(from, 5).from };
+}
+
 /** Crew placed in a slot, by reference, with the status of their assignment. */
 export interface ArrangedCrew {
   crewMember: string;

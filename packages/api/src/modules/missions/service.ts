@@ -2,10 +2,10 @@ import {
   type CreateMission,
   type CrewMission,
   formatRef,
+  isStaffableStatus,
   type Mission,
   type MissionCrew,
   type MissionEvent,
-  type MissionStatus,
   type SetRequirement,
   type Transition,
   type UpdateMission,
@@ -148,18 +148,17 @@ export async function createMission(context: TenantContext, input: CreateMission
   return describeMission(context, await getMissionByRef(context, ref));
 }
 
-/** The statuses in which a mission's crew can change: a draft plans, and an approved mission refills a slot. */
-const STAFFABLE_STATUSES: readonly MissionStatus[] = ['draft', 'approved'];
-
 /**
- * Locks a mission whose crew is about to change, so two changes to it run one after the other, and
- * gives it as it now is. Refused unless its status lets its crew change.
+ * Locks a mission whose crew the caller is about to change, so two changes to it run one after the
+ * other, and gives it as it now is. Refused unless the caller may change its crew (403: they can see
+ * the mission) and its status lets its crew change.
  */
 export async function lockMissionForCrewChange(context: TenantContext, visible: MissionRow): Promise<MissionRow> {
+  const ref = formatRef('mission', visible.ref);
+  if (!reaches(context, 'missions:assign-crew', visible.ownerId)) throw forbidden(`Only ${ref}'s owner or a director can change its crew.`);
   await lockMission(context, visible.id);
   const mission = await getMissionByRef(context, visible.ref);
-  if (!STAFFABLE_STATUSES.includes(mission.status)) {
-    const ref = formatRef('mission', mission.ref);
+  if (!isStaffableStatus(mission.status)) {
     throw new DomainError(
       'NOT_STAFFABLE',
       `${ref} is ${mission.status}, so its crew cannot change.`,
@@ -171,8 +170,7 @@ export async function lockMissionForCrewChange(context: TenantContext, visible: 
 
 /** A mission whose crew the caller may change, with its row lock taken for the change. */
 export async function resolveMissionForCrewChange(context: TenantContext, missionRef: string): Promise<MissionRow> {
-  const mission = await resolveMissionToAct(context, missionRef, 'missions:assign-crew', `Only ${missionRef}'s owner or a director can change its crew.`);
-  return lockMissionForCrewChange(context, mission);
+  return lockMissionForCrewChange(context, await resolveMission(context, missionRef));
 }
 
 /** A draft the caller may edit. Any other status is refused: what is approved is what was submitted. */

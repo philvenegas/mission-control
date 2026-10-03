@@ -1,7 +1,8 @@
-import { errorResponseSchema, matchRunSchema, missionSchema, type Period } from '@mission-control/contract';
+import { matchRunSchema, type Period } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
-import { type ArrangedCrew, arrangeMission } from '../../test/arrange.ts';
+import { type ArrangedCrew, arrangeMission, weekOf2031 } from '../../test/arrange.ts';
+import { crewOf, errorOf as error, missionOf as mission } from '../../test/missions.ts';
 
 const { app, owner } = useSeededApp();
 
@@ -22,8 +23,6 @@ beforeAll(async () => {
 const SAM = { name: 'Sam Okafor', email: 'sam@artemis.example' };
 const MARCH = { from: '2027-03-01', to: '2027-03-20' };
 
-const mission = async (response: Response) => bodyOf(response, missionSchema);
-const error = async (response: Response) => ({ status: response.status, ...(await bodyOf(response, errorResponseSchema)).error });
 
 /** A new draft of Sam's needing one skill. */
 async function draftNeeding(skill: string, minLevel: number, period: Period = MARCH, headcount = 1) {
@@ -36,22 +35,15 @@ let arranged = 0;
 /** A mission of Sam's in a status, on its own week of 2031, needing a pilot, optionally with crew in its slot. */
 function arrangeOwn(status: 'approved' | 'submitted', crew: ArrangedCrew[] = []) {
   const week = arranged++;
-  const day = (offset: number) => new Date(Date.UTC(2031, 0, 1 + 7 * week + offset)).toISOString().slice(0, 10);
   return arrangeMission(owner, {
     org: 'artemis',
     name: `Assigned ${week}`,
-    period: { from: day(0), to: day(5) },
+    period: weekOf2031(week),
     status,
     owner: 'sam@artemis.example',
     skill: 'pilot',
     crew,
   });
-}
-
-/** Who is in each slot of a mission, as `skill: name status`. */
-async function crewOf(caller: Caller, ref: string) {
-  const { requirements } = await mission(await caller.get(`/v1/missions/${ref}`));
-  return requirements.flatMap(({ skill, crew }) => crew.map(({ crew_member, status }) => `${skill}: ${crew_member.name} ${status}`));
 }
 
 /** The reference of the assignment that puts a crew member on a mission. */

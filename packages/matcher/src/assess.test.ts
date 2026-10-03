@@ -29,7 +29,7 @@ describe('assessing one crew member for one slot', () => {
 
   it('gives every hard constraint the crew member fails, and no score', () => {
     const away = { ...ada, status: 'inactive' as const, availabilityBlocks: [{ ref: 'AVL-3', period: { from: '2027-03-05', to: '2027-03-12' } }] };
-    expect(assessCandidate({ crew: away, need: { skill: 'pilot', minLevel: 3 }, mission: EUROPA }, DEFAULT_MATCH_WEIGHTS)).toEqual({
+    expect(assessCandidate({ crew: away, need: PILOT, mission: EUROPA }, DEFAULT_MATCH_WEIGHTS)).toEqual({
       failures: [{ constraint: 'active' }, { constraint: 'availability', block: away.availabilityBlocks[0] }],
       clashes: [],
       score: null,

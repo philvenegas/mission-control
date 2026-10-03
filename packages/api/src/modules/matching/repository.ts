@@ -1,5 +1,5 @@
 import type { MatchRunResult, MatchWeights } from '@mission-control/contract';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { matchRuns, missions, users } from '../../db/schema.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 
@@ -34,12 +34,7 @@ export async function findMatchRunByRef({ tx, orgId }: TenantContext, ref: numbe
 
 export type MatchRunRow = NonNullable<Awaited<ReturnType<typeof findMatchRunByRef>>>;
 
-/** Marks a run applied, only if it has not been already. False when another request applied it first. */
-export async function markApplied({ tx, orgId }: TenantContext, id: string): Promise<boolean> {
-  const applied = await tx
-    .update(matchRuns)
-    .set({ appliedAt: sql`now()` })
-    .where(and(eq(matchRuns.orgId, orgId), eq(matchRuns.id, id), isNull(matchRuns.appliedAt)))
-    .returning({ id: matchRuns.id });
-  return applied.length > 0;
+/** Marks a run applied. The caller holds its mission's row lock, so no other request is applying it. */
+export async function markApplied({ tx, orgId }: TenantContext, id: string) {
+  await tx.update(matchRuns).set({ appliedAt: sql`now()` }).where(and(eq(matchRuns.orgId, orgId), eq(matchRuns.id, id)));
 }

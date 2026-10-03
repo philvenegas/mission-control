@@ -1,8 +1,9 @@
-import { availabilityBlockSchema, errorResponseSchema, type MatchRun, matchRunSchema, missionSchema } from '@mission-control/contract';
+import { availabilityBlockSchema, DEFAULT_MATCH_WEIGHTS, type MatchRun, matchRunSchema, missionSchema } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
-import { arrangeMission } from '../../test/arrange.ts';
-import { onlyRow } from '../../test/database.ts';
+import { arrangeMission, weekOf2031 } from '../../test/arrange.ts';
+import { crewOf, errorOf as error, missionOf as mission } from '../../test/missions.ts';
 
 const { app, owner } = useSeededApp();
 
@@ -22,9 +23,7 @@ beforeAll(async () => {
 
 const SAM = { name: 'Sam Okafor', email: 'sam@artemis.example' };
 
-const mission = async (response: Response) => bodyOf(response, missionSchema);
 const matchRun = async (response: Response) => bodyOf(response, matchRunSchema);
-const error = async (response: Response) => ({ status: response.status, ...(await bodyOf(response, errorResponseSchema)).error });
 
 /** Who each slot of a run went to, as `skill number: name`, or unfilled. */
 const choices = (run: MatchRun) => run.slots.map(({ slot, chosen }) => `${slot.skill} ${slot.number}: ${chosen ? chosen.crew_member.name : 'unfilled'}`);
@@ -36,27 +35,16 @@ function chosenCrewMember(run: MatchRun) {
   return chosen;
 }
 
-/** Who is in each slot of a mission, as `skill: name status`. */
-async function crewOf(caller: Caller, ref: string) {
-  const { requirements } = await mission(await caller.get(`/v1/missions/${ref}`));
-  return requirements.flatMap(({ skill, crew }) => crew.map(({ crew_member, status }) => `${skill}: ${crew_member.name} ${status}`));
-}
-
-const assignmentCount = async () =>
-  (await onlyRow(owner`SELECT count(*)::int AS assignments FROM assignments`, 'count')).assignments;
-
 let arranged = 0;
 /** A mission of Artemis's on its own week of 2031, owned by Sam, needing one skill. */
 function arrangeFor(status: 'draft' | 'approved', skill: string, minLevel = 1, headcount = 1) {
   const week = arranged++;
-  const from = new Date(Date.UTC(2031, 0, 1 + 7 * week)).toISOString().slice(0, 10);
-  const to = new Date(Date.UTC(2031, 0, 6 + 7 * week)).toISOString().slice(0, 10);
-  return arrangeMission(owner, { org: 'artemis', name: `Matched ${week}`, period: { from, to }, status, owner: 'sam@artemis.example', skill, minLevel, headcount });
+  return arrangeMission(owner, { org: 'artemis', name: `Matched ${week}`, period: weekOf2031(week), status, owner: 'sam@artemis.example', skill, minLevel, headcount });
 }
 
 describe('running the matcher', () => {
   it('saves a match run with its proposal, its explanation and the weights in force, and changes nothing else', async () => {
-    const before = await assignmentCount();
+    const before = await bodyOf(await dana.get('/v1/missions'), z.array(missionSchema));
     const response = await sam.post('/v1/missions/MSN-7/match');
     expect(response.status).toBe(201);
     const run = await matchRun(response);
@@ -65,13 +53,13 @@ describe('running the matcher', () => {
       mission: 'MSN-7',
       created_by: SAM,
       applied_at: null,
-      weights: { proficiency: 0.45, workload: 0.35, rest: 0.2 },
+      weights: DEFAULT_MATCH_WEIGHTS,
       summary: { slots: 2, already_filled: 0, open: 2, filled: 2, clashes: 0 },
     });
     // Io Flyby: filling one slot at a time would make Ada the pilot and leave the medic slot empty.
     expect(choices(run)).toEqual(['medic 1: Ada Reyes', 'pilot 1: Ben Osei']);
-    expect(await crewOf(sam, 'MSN-7')).toEqual([]);
-    expect(await assignmentCount()).toBe(before);
+    // Every mission, its crew included, is as it was.
+    expect(await bodyOf(await dana.get('/v1/missions'), z.array(missionSchema))).toEqual(before);
   });
 
   it('numbers runs per organisation, and gives each its own', async () => {
