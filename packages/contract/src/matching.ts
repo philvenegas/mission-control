@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { crewMemberSummarySchema } from './assignment.ts';
 import { ASSIGNMENT_STATUSES, matchWeightsSchema, MISSION_STATUSES } from './domain.ts';
-import { namedUserSchema } from './mission.ts';
+import { namedUserSchema } from './user.ts';
 import { isoDaySchema } from './period.ts';
 
 // A match run as the API gives it (DESIGN.md section 6.6): the matcher's proposal for a mission's
@@ -33,6 +33,16 @@ export const constraintFailureSchema = z.discriminatedUnion('constraint', [
   z.object({ constraint: z.literal('not_on_mission'), assignment: assignmentSummarySchema }),
 ]);
 export type ConstraintFailureResponse = z.infer<typeof constraintFailureSchema>;
+
+/**
+ * A reason a proposed assignment is no longer sound (DESIGN.md section 4, "Proposal check"): another
+ * draft over the same period proposes the crew member too, or they now fail a hard constraint.
+ */
+export const problemSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('clash'), mission: missionSummarySchema }),
+  z.object({ kind: z.literal('hard_constraint'), failure: constraintFailureSchema }),
+]);
+export type Problem = z.infer<typeof problemSchema>;
 
 /** Why a crew member was lost to an unfilled slot: the first constraint they failed, or that they were needed elsewhere. */
 export const LOSS_REASONS = [

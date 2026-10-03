@@ -11,6 +11,7 @@ import {
   findCrewMemberByRef,
   findCrewMemberByUser,
   insertCrewMember,
+  lockCrewMembers,
   listCrewMembers,
   listCrewSkills,
   updateCrewMember,
@@ -65,6 +66,7 @@ export async function addCrewMember(context: TenantContext, input: CreateCrewMem
 
 export async function changeCrewMember(context: TenantContext, crewMemberRef: string, changes: UpdateCrewMember): Promise<CrewMember> {
   const crewMember = await resolveCrewMember(context, crewMemberRef, 'crew:edit');
+  await lockCrewMembers(context, [crewMember.id]);
   if (changes.status !== undefined && !can(context.role, 'crew:set-status')) {
     throw forbidden('Only a director can make a crew member active or inactive.');
   }
@@ -79,6 +81,7 @@ export async function setCrewSkill(
   input: SetCrewSkill,
 ): Promise<CrewMember> {
   const crewMember = await resolveCrewMember(context, crewMemberRef, 'crew:edit');
+  await lockCrewMembers(context, [crewMember.id]);
   const skill = await getSkill(context, skillName);
   await upsertCrewSkill(context, {
     crewMemberId: crewMember.id,
@@ -91,6 +94,7 @@ export async function setCrewSkill(
 
 export async function removeCrewSkill(context: TenantContext, crewMemberRef: string, skillName: string): Promise<CrewMember> {
   const crewMember = await resolveCrewMember(context, crewMemberRef, 'crew:edit');
+  await lockCrewMembers(context, [crewMember.id]);
   const skill = await getSkill(context, skillName);
   if (!(await deleteCrewSkill(context, crewMember.id, skill.id))) {
     throw notFound(`${formatRef('crew_member', crewMember.ref)}'s ${skill.name} skill`);

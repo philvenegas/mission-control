@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { crewMemberSummarySchema } from './assignment.ts';
+import { problemSchema } from './matching.ts';
+import { namedUserSchema } from './user.ts';
 import { ASSIGNMENT_STATUSES, MAX_LEVEL, MIN_LEVEL, MISSION_EVENT_TYPES, MISSION_STATUSES } from './domain.ts';
 import { endsAfterStart, isoDaySchema, PERIOD_ORDER } from './period.ts';
 import { nameSchema } from './text.ts';
@@ -11,10 +13,6 @@ export const MAX_NOTE_LENGTH = 500;
 
 const level = z.number().int().min(MIN_LEVEL).max(MAX_LEVEL);
 const description = z.string().trim().max(MAX_DESCRIPTION_LENGTH);
-
-/** A user, as a response names one: by name, and by email, which addresses them. */
-export const namedUserSchema = z.object({ name: z.string(), email: z.string() });
-export type NamedUser = z.infer<typeof namedUserSchema>;
 
 /**
  * A crew member in one of a mission's slots, and where they came from: the match run that chose
@@ -30,6 +28,11 @@ export const missionCrewSchema = z.object({
   /** Who applied the match run, or who assigned the crew member by hand. */
   assigned_by: namedUserSchema,
   decline_reason: z.string().nullable(),
+  /**
+   * Why a proposal is no longer sound, worked out when the mission is read: any problem blocks
+   * submission. Only a proposal on a draft can have one.
+   */
+  problems: z.array(problemSchema),
 });
 export type MissionCrew = z.infer<typeof missionCrewSchema>;
 

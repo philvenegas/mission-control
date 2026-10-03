@@ -124,6 +124,8 @@ export function listRequirements({ tx, orgId }: TenantContext, missionIds: strin
     .orderBy(asc(skills.name));
 }
 
+export type RequirementRow = Awaited<ReturnType<typeof listRequirements>>[number];
+
 export async function upsertRequirement(
   { tx, orgId }: TenantContext,
   values: { missionId: string; skillId: string; minLevel: number; headcount: number },
@@ -251,7 +253,7 @@ export async function moveAssignments(
 
 export async function insertEvent(
   { tx, orgId, userId }: TenantContext,
-  values: { missionId: string; type: MissionEventType; fromStatus: MissionStatus; toStatus: MissionStatus; note: string | null },
+  values: { missionId: string; type: MissionEventType; fromStatus: MissionStatus | null; toStatus: MissionStatus | null; note: string | null },
 ) {
   await tx.insert(missionEvents).values({ orgId, actorId: userId, ...values });
 }

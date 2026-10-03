@@ -1,5 +1,6 @@
 import {
   type CreateMission,
+  type CrewMemberSummary,
   type CrewMission,
   formatRef,
   isStaffableStatus,
@@ -15,7 +16,8 @@ import { exactlyOne } from '../../db/rows.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden, notFound } from '../../errors.ts';
-import { listMissionCrew, type MissionCrewRow } from '../assignments/repository.ts';
+import { listMissionCrew } from '../assignments/repository.ts';
+import { type CheckedCrew, checkProposals } from './proposals.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
 import { runTransition } from './lifecycle.ts';
@@ -25,6 +27,7 @@ import {
   findMissionByRef,
   findRequirement,
   getMissionByRef,
+  insertEvent,
   insertMission,
   listCurrentDecisions,
   listEvents,
@@ -40,7 +43,7 @@ import {
 /** Whether the caller reads missions as a crew member does: only those they are offered or accepted on. */
 const readsOwnMissions = (context: TenantContext) => scopeOf(context.role, 'missions:read') === 'own';
 
-const toMissionCrew = (assignment: MissionCrewRow): MissionCrew => ({
+const toMissionCrew = (assignment: CheckedCrew): MissionCrew => ({
   assignment: formatRef('assignment', assignment.ref),
   crew_member: { ref: formatRef('crew_member', assignment.crewMember.ref), name: assignment.crewMember.name },
   status: assignment.status,
@@ -48,16 +51,18 @@ const toMissionCrew = (assignment: MissionCrewRow): MissionCrew => ({
   match_run: assignment.matchRunRef === null ? null : formatRef('match_run', assignment.matchRunRef),
   assigned_by: assignment.assignedBy,
   decline_reason: assignment.declineReason,
+  problems: assignment.problems,
 });
 
 async function toMissions(context: TenantContext, rows: MissionRow[]): Promise<Mission[]> {
   const ids = rows.map((row) => row.id);
-  const [requirements, crew, decisions, { settings }] = await Promise.all([
+  const [requirements, missionCrew, decisions, { settings }] = await Promise.all([
     listRequirements(context, ids),
     listMissionCrew(context, ids),
     listCurrentDecisions(context, ids),
     getOrganisation(context),
   ]);
+  const crew = await checkProposals(context, { missions: rows, requirements, missionCrew, weights: settings.match_weights });
   return rows.map((row) => ({
     ref: formatRef('mission', row.ref),
     name: row.name,
@@ -166,6 +171,23 @@ export async function lockMissionForCrewChange(context: TenantContext, visible: 
     );
   }
   return mission;
+}
+
+/**
+ * Writes into each other draft's history that a crew member it proposes is now proposed on this
+ * mission too: a clash (DESIGN.md section 4). The event's actor is whoever made the proposal.
+ */
+export async function recordClashes(context: TenantContext, mission: MissionRow, crewMember: CrewMemberSummary, clashes: { ref: string }[]) {
+  for (const other of clashes) {
+    const { id } = await getMissionByRef(context, refNumber('mission', other.ref));
+    await insertEvent(context, {
+      missionId: id,
+      type: 'clash',
+      fromStatus: null,
+      toStatus: null,
+      note: `${crewMember.name} ${crewMember.ref} is now also proposed on ${formatRef('mission', mission.ref)} ${mission.name}.`,
+    });
+  }
 }
 
 /** A mission whose crew the caller may change, with its row lock taken for the change. */

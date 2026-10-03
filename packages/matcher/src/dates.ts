@@ -15,8 +15,6 @@ export const daysBetween = (from: string, to: string) => toDays(to) - toDays(fro
 /** The last day a period covers. */
 export const lastDay = (period: Period) => addDays(period.to, -1);
 
-export const overlaps = (a: Period, b: Period) => a.from < b.to && b.from < a.to;
-
 /** How many days two periods share. */
 export const sharedDays = (a: Period, b: Period) =>
   Math.max(0, daysBetween(a.from > b.from ? a.from : b.from, a.to < b.to ? a.to : b.to));

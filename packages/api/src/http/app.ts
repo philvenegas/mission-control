@@ -6,7 +6,7 @@ import { can } from '../auth/policy.ts';
 import { type TokenSettings, verifyToken } from '../auth/token.ts';
 import type { Database } from '../db/connection.ts';
 import { withTenant } from '../db/tenant.ts';
-import { DomainError, forbidden, internal, notFound, unauthenticated } from '../errors.ts';
+import { crewAlreadyHeld, DomainError, forbidden, internal, isBookingRuleViolation, notFound, unauthenticated } from '../errors.ts';
 import { assignmentRoutes } from '../modules/assignments/routes.ts';
 import { availabilityRoutes } from '../modules/availability/routes.ts';
 import { crewRoutes } from '../modules/crew/routes.ts';
@@ -44,6 +44,8 @@ export function createApp({ db, token, extraRoutes = [], onUnexpectedError = con
   // The one place an error becomes a response.
   app.onError((error, c) => {
     if (error instanceof DomainError) return render(c, error);
+    // The database is the final arbiter of the booking rule (DESIGN.md section 3).
+    if (isBookingRuleViolation(error)) return render(c, crewAlreadyHeld());
     onUnexpectedError(error);
     return render(c, internal());
   });

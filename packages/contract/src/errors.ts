@@ -31,6 +31,8 @@ export const ERROR_CODES = {
   CLASH_NOT_ALLOWED: 409,
   /** The assignment's status does not allow the change. */
   WRONG_ASSIGNMENT_STATUS: 409,
+  /** The crew member is already held, offered or accepted for an overlapping period. */
+  CREW_HELD: 409,
   INTERNAL: 500,
 } as const;
 

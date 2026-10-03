@@ -291,7 +291,11 @@ const SWEEP_ENTRIES: [string, SweepEntry][] = [
   ).map(([transition, from]): [string, SweepEntry] => [
     `POST /v1/missions/:ref/${transition}`,
     {
-      call: async (director, own) => director.post(`/v1/missions/${await missionIn(own, from)}/${transition}`, { note: 'Swept.' }),
+      call: async (director, own) => {
+        // A draft is submitted with its slot filled: the organisation may not allow open slots.
+        const crew: ArrangedCrew[] | undefined = from === 'draft' ? [{ crewMember: own.skilledCrewMember, status: 'proposed' }] : undefined;
+        return director.post(`/v1/missions/${await missionIn(own, from, crew)}/${transition}`, { note: 'Swept.' });
+      },
       intoArtemis: [(helios) => helios.post(`/v1/missions/${ARTEMIS_ONLY.mission}/${transition}`, { note: 'Swept.' })],
     },
   ]),

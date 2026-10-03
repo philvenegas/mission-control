@@ -1,6 +1,7 @@
 import { connect } from '../db/connection.ts';
 import { exactlyOne } from '../db/rows.ts';
 import { requireEnv } from '../env.ts';
+export { EXCLUSION_VIOLATION } from '../errors.ts';
 
 /** The test database as its owner: for seeding and for checking what the database itself enforces. */
 export const connectAsOwner = () => connect(requireEnv('TEST_DATABASE_OWNER_URL'));
@@ -28,6 +29,5 @@ export async function errorCode(query: PromiseLike<unknown>): Promise<string | n
 }
 
 export const FOREIGN_KEY_VIOLATION = '23503';
-export const EXCLUSION_VIOLATION = '23P01';
 export const CHECK_VIOLATION = '23514';
 export const INSUFFICIENT_PRIVILEGE = '42501';

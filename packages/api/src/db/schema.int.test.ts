@@ -115,6 +115,11 @@ describe('the booking rule', () => {
     expect(proposals.map((row) => row.name)).toEqual(['Ceres Resupply', 'Vesta Mapping']);
   });
 
+  it('is the only exclusion constraint, so the API can read any exclusion violation as a second hold', async () => {
+    const exclusions = await sql`SELECT conname FROM pg_constraint WHERE contype = 'x' AND connamespace = 'public'::regnamespace`;
+    expect(exclusions).toEqual([{ conname: 'no_double_booking' }]);
+  });
+
   it('refuses a second live assignment that overlaps, whatever the application does', async () => {
     // Quin is held by Phobos Survey for June; Io Flyby is 7–21 June.
     expect(await errorCode(assign('Quin Abara', 'Io Flyby', 'held', 901))).toBe(EXCLUSION_VIOLATION);

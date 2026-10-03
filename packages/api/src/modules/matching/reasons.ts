@@ -17,7 +17,7 @@ export const reasonsFor = (crewMember: CrewMemberSummary, skill: string, failure
   failures.map((failure) => describeFailure(crewMember, skill, toFailureResponse(failure)));
 
 /** One failed hard constraint, as a sentence about the crew member. */
-function describeFailure(crewMember: CrewMemberSummary, skill: string, failure: ConstraintFailureResponse): string {
+export function describeFailure(crewMember: CrewMemberSummary, skill: string, failure: ConstraintFailureResponse): string {
   const who = nameCrewMember(crewMember);
   switch (failure.constraint) {
     case 'active':

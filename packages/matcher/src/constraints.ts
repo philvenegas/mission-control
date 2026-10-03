@@ -1,5 +1,5 @@
-import { LIVE_ASSIGNMENT_STATUSES, PLACED_ASSIGNMENT_STATUSES } from '@mission-control/contract';
-import { lastDay, overlaps } from './dates.ts';
+import { LIVE_ASSIGNMENT_STATUSES, PLACED_ASSIGNMENT_STATUSES, periodsOverlap } from '@mission-control/contract';
+import { lastDay } from './dates.ts';
 import { type AssignmentInput, type AvailabilityBlockInput, assignmentsElsewhere, type Consideration, skillRecord } from './input.ts';
 
 /** Why a crew member is not a candidate for a slot: the hard constraint that failed, with what failed it. */
@@ -48,7 +48,7 @@ export const HARD_CONSTRAINTS: readonly HardConstraint[] = [
   {
     name: 'availability',
     check: ({ crew, mission }) => {
-      const block = crew.availabilityBlocks.find((each) => overlaps(each.period, mission.period));
+      const block = crew.availabilityBlocks.find((each) => periodsOverlap(each.period, mission.period));
       return block ? { constraint: 'availability', block } : null;
     },
   },

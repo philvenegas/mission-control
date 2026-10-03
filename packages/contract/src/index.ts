@@ -8,3 +8,4 @@ export * from './mission.ts';
 export * from './period.ts';
 export * from './reference.ts';
 export * from './text.ts';
+export * from './user.ts';
