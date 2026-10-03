@@ -7,13 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 4 are done. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 5 are done. The first release, 0.1.0, will be the completed core.
 
 ### Added
 
 - Design document (`DESIGN.md`), final: scope, sixteen recorded decisions, domain model, mission lifecycle, roles and access, matching engine, API, CLI, verification plan and build order.
 - Domain glossary (`CONTEXT.md`) and the `mission-control-domain` agent skill, which holds the fourteen invariants.
-- pnpm workspace with the `contract` and `api` packages. The `matcher` and `cli` packages are created by their own build steps.
+- pnpm workspace with the `contract`, `matcher` and `api` packages. The `cli` package is created by its own build step.
 - `contract` package: roles, mission and assignment statuses, transitions, mission event types, and organisation settings with their defaults.
 - Postgres 17 in Docker, published on host port 54329, configured from `.env` (copied from `.env.example`).
 - Two database roles: an owner that runs migrations and the seed, and an API role that owns no table, is not a superuser and cannot bypass row-level security. The API role can add to `mission_events` and `mission_approvals` but never change or delete them, and cannot create or delete an organisation.
@@ -54,6 +54,8 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - A table-driven test of every transition, from every status, by every role.
 - The architecture test checks that a mission's status changes only through the lifecycle module (DESIGN.md section 9, rule 3).
 - A glossary test reads the words `CONTEXT.md` says to avoid and finds any in the source, tests and comments included.
+- The `matcher` package: `match(input)` proposes crew for a mission's open slots, a pure function that imports nothing from the API. Seven hard constraints, each recording why it failed; proficiency, workload and rest scorers weighted by the organisation's settings; a hand-written Hungarian solver over whole-number costs that fills the most slots, then makes the fewest clashes, then gets the best total score. The output gives each slot's choice with its score breakdown, up to three alternates, the reasons a slot went unfilled with its two nearest misses, any clash it could not avoid, and crew with a required skill who were left out.
+- Match weights must not be negative, and must not all be zero.
 - `test/arrange.ts`: one way for tests to arrange missions and crew the API cannot yet create, taking references from the organisation's counters.
 
 ### Fixed

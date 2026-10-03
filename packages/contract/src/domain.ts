@@ -36,7 +36,11 @@ export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 export const MIN_LEVEL = 1;
 export const MAX_LEVEL = 5;
 
-export const matchWeightsSchema = z.object({ proficiency: z.number(), workload: z.number(), rest: z.number() });
+const weight = z.number().min(0);
+/** How much each score component counts, as shares of their sum: none negative, and not all zero. */
+export const matchWeightsSchema = z
+  .object({ proficiency: weight, workload: weight, rest: weight })
+  .refine(({ proficiency, workload, rest }) => proficiency + workload + rest > 0, { message: 'At least one weight must be above zero.' });
 export type MatchWeights = z.infer<typeof matchWeightsSchema>;
 
 export const orgSettingsSchema = z.object({
