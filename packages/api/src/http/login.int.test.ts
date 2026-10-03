@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { hashPassword } from '../auth/password.ts';
 import { signToken } from '../auth/token.ts';
 import { exactlyOne } from '../db/rows.ts';
-import { DEMO_PASSWORD } from '../db/seed.ts';
+import { DEMO_PASSWORD } from '../db/seed-data.ts';
 import { callerWith, loginAs, postLogin, TEST_TOKEN, useSeededApp } from '../test/app.ts';
 
 const { app, owner, unexpectedErrors } = useSeededApp();

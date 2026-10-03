@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { verifyPassword } from '../auth/password.ts';
 import { connectAsOwner, onlyRow } from '../test/database.ts';
 import { exactlyOne } from './rows.ts';
-import { DEMO_PASSWORD, seed } from './seed.ts';
+import { DEMO_PASSWORD } from './seed-data.ts';
+import { seed } from './seed.ts';
 import { type OrgSeed, SEED_ORGS } from './seed-data.ts';
 
 const { client: sql, db } = connectAsOwner();

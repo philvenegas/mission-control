@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Runs mctl from this repository; nothing is installed outside it. Node runs the TypeScript
+# source as it is, so there is nothing to build first.
+set -euo pipefail
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec node --disable-warning=ExperimentalWarning "$root/packages/cli/src/main.ts" "$@"

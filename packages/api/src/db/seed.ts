@@ -12,9 +12,7 @@ import { hashPassword } from '../auth/password.ts';
 import { requireEnv } from '../env.ts';
 import { connect, type Database } from './connection.ts';
 import * as schema from './schema.ts';
-import { type MissionSeed, type OrgSeed, SEED_BASE_DATE, SEED_ORGS } from './seed-data.ts';
-
-export const DEMO_PASSWORD = 'mission-control-demo';
+import { DEMO_PASSWORD, demoEmail, type MissionSeed, type OrgSeed, SEED_BASE_DATE, SEED_ORGS } from './seed-data.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -50,7 +48,7 @@ function lookup<V>(map: Map<string, V>, key: string, what: string): V {
 async function seedOrg(db: Database, org: OrgSeed, passwordHash: string) {
   const orgId = randomUUID();
   await db.insert(schema.organisations).values({ id: orgId, name: org.name, slug: org.slug, settings: org.settings });
-  const email = (name: string) => `${firstName(name).toLowerCase()}@${org.slug}.example`;
+  const email = (name: string) => demoEmail(name, org.slug);
 
   const skillIds = new Map<string, string>();
   for (const [name, category] of Object.entries(org.skills)) {
