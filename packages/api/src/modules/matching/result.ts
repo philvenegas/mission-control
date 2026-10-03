@@ -1,5 +1,5 @@
-import type { ConstraintFailureResponse, MatchRunResult } from '@mission-control/contract';
-import type { AssignmentInput, ConstraintFailure, CrewMemberSummary, MatchOutput, MissionSummary, Score } from '@mission-control/matcher';
+import type { ConstraintFailureResponse, MatchRunResult, ScoreComponentResponse } from '@mission-control/contract';
+import type { AssignmentInput, ConstraintFailure, CrewMemberSummary, MatchOutput, MissionSummary, Score, ScoreComponent } from '@mission-control/matcher';
 
 // The matcher's output, in the API's own shape: field names as every response writes them, and
 // every record named by its reference.
@@ -16,10 +16,19 @@ const assignment = ({ ref, mission, period, status }: AssignmentInput) => ({
   status,
 });
 
-const score = ({ total, components }: Score) => ({
-  total,
-  components: components.map(({ name, value, weight, points }) => ({ name, value, weight, points })),
-});
+function scoreComponent(component: ScoreComponent): ScoreComponentResponse {
+  const { value, weight, points } = component;
+  switch (component.name) {
+    case 'proficiency':
+      return { name: 'proficiency', value, weight, points, level: component.level };
+    case 'workload':
+      return { name: 'workload', value, weight, points, days_assigned: component.daysAssigned, window_days: component.windowDays };
+    case 'rest':
+      return { name: 'rest', value, weight, points, days_rested: component.daysRested };
+  }
+}
+
+const score = ({ total, components }: Score) => ({ total, components: components.map(scoreComponent) });
 
 export function toFailureResponse(failure: ConstraintFailure): ConstraintFailureResponse {
   switch (failure.constraint) {
@@ -51,7 +60,11 @@ export function toMatchRunResult(output: MatchOutput): MatchRunResult {
       })),
       unfilled: unfilled && {
         lost_to: unfilled.lostTo,
-        nearest_misses: unfilled.nearestMisses.map((miss) => ({ crew_member: crewMember(miss.crewMember), failures: miss.failures.map(toFailureResponse) })),
+        nearest_misses: unfilled.nearestMisses.map((miss) => ({
+          crew_member: crewMember(miss.crewMember),
+          level: miss.level,
+          failures: miss.failures.map(toFailureResponse),
+        })),
       },
     })),
     ruled_out: output.ruledOut.map((ruledOut) => ({

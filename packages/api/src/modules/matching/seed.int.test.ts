@@ -33,9 +33,10 @@ describe('the matcher over the seed', () => {
       nearest_misses: [
         {
           crew_member: { ref: 'CRW-12', name: 'Tala Moreno' },
+          level: 5,
           failures: [{ constraint: 'availability', block: { ref: 'AVL-3', from: '2027-04-01', to: '2027-04-14' } }],
         },
-        { crew_member: { ref: 'CRW-11', name: 'Sven Dahl' }, failures: [{ constraint: 'skill', level: 3, min_level: 4 }] },
+        { crew_member: { ref: 'CRW-11', name: 'Sven Dahl' }, level: 3, failures: [{ constraint: 'skill', level: 3, min_level: 4 }] },
       ],
     });
   });
@@ -55,6 +56,14 @@ describe('the matcher over the seed', () => {
     const medic = europa.slots.find(({ slot }) => slot.skill === 'medic');
     const free = medic?.alternates.filter((alternate) => !alternate.chosen_for_another_slot).map(({ crew_member }) => crew_member.name);
     expect(free?.[0]).toBe('Mina Farouk');
+    // Each component says what it was worked out from: Ada flies pilot at level 5 and has no
+    // assignment in the 180 days around the start.
+    const pilot = europa.slots.find(({ slot }) => slot.skill === 'pilot');
+    expect(pilot?.chosen?.score.components).toMatchObject([
+      { name: 'proficiency', level: 5 },
+      { name: 'workload', days_assigned: 0, window_days: 180 },
+      { name: 'rest' },
+    ]);
     expect(medic?.chosen?.score.total).toBeGreaterThan(medic?.alternates.find(({ crew_member }) => crew_member.name === 'Mina Farouk')?.score ?? 1);
   });
 });

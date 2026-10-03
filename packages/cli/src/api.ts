@@ -56,7 +56,7 @@ export async function callApi<Schema extends z.ZodType>(api: string, request: Ap
   if (!response.ok) {
     const refusal = errorResponseSchema.safeParse(raw);
     if (!refusal.success) throw new CliError(failureFor(response.status), `The API at ${api} answered ${response.status}.`);
-    throw new CliError(failureFor(response.status), refusal.data.error.message, refusal.data.error.hint);
+    throw new CliError(failureFor(response.status), refusal.data.error.message, refusal.data.error.hint, refusal.data.error.code);
   }
   const data = schema.safeParse(raw);
   if (!data.success) {

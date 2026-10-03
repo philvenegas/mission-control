@@ -46,3 +46,36 @@ export function readHiddenLine(input: Terminal, output: Output, question: string
     input.on('end', onEnd);
   });
 }
+
+/** Reads one line typed at a terminal, which echoes it; null if the input ends first. */
+function readLine(input: NodeJS.ReadableStream): Promise<string | null> {
+  let typed = '';
+  return new Promise((resolve) => {
+    const finish = (line: string | null) => {
+      input.removeListener('data', onData);
+      input.removeListener('end', onEnd);
+      input.pause();
+      resolve(line);
+    };
+    const onEnd = () => finish(null);
+    function onData(chunk: string | Buffer) {
+      typed += String(chunk);
+      const end = typed.indexOf('\n');
+      if (end >= 0) finish(typed.slice(0, end));
+    }
+    input.on('data', onData);
+    input.on('end', onEnd);
+    input.resume();
+  });
+}
+
+/**
+ * Asks before a destructive change (DESIGN.md section 8), and goes ahead only on yes. With no
+ * terminal to ask on, it refuses with `cannotAsk`, which says how to go ahead without being asked.
+ */
+export async function confirm(input: NodeJS.ReadableStream & { isTTY?: boolean }, output: Output, question: string, cannotAsk: CliError): Promise<void> {
+  if (input.isTTY !== true) throw cannotAsk;
+  output.write(`${question} [y/N] `);
+  const answer = (await readLine(input))?.trim().toLowerCase();
+  if (answer !== 'y' && answer !== 'yes') throw new CliError('general', 'Nothing was changed.');
+}

@@ -1,3 +1,5 @@
+import type { ErrorCode } from '@mission-control/contract';
+
 // How a command fails (DESIGN.md section 8): a message and a hint for a person, and an exit code a
 // script can branch on.
 
@@ -23,12 +25,15 @@ export type Failure = keyof typeof EXIT_CODES;
 export class CliError extends Error {
   readonly failure: Failure;
   readonly hint?: string;
+  /** The API's code, when the API refused the request. */
+  readonly code?: ErrorCode;
 
-  constructor(failure: Failure, message: string, hint?: string) {
+  constructor(failure: Failure, message: string, hint?: string, code?: ErrorCode) {
     super(message);
     this.name = 'CliError';
     this.failure = failure;
     this.hint = hint;
+    this.code = code;
   }
 
   get exitCode(): number {

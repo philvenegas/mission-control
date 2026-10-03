@@ -11,7 +11,7 @@ export default defineConfig({
       // Every file not fully covered, with its uncovered lines: the list a reviewer checks for untested throws.
       reporter: [['text', { skipFull: true }]],
       // The level reached when coverage was first measured. Raise these as gaps close; never lower them.
-      thresholds: { statements: 97, branches: 98, functions: 99, lines: 97 },
+      thresholds: { statements: 98, branches: 98.5, functions: 99, lines: 98 },
     },
   },
 });

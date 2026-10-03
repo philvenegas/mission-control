@@ -2,7 +2,7 @@ import { DEFAULT_MATCH_WEIGHTS, type Period } from '@mission-control/contract';
 import { describe, expect, it } from 'vitest';
 import { addDays } from './dates.ts';
 import type { CrewInput, Slot } from './input.ts';
-import { SCORERS, scoreCandidate } from './scorers.ts';
+import { scoreCandidate } from './scorers.ts';
 
 const START = '2027-03-01';
 const MISSION = { ref: 'MSN-8', status: 'draft' as const, period: { from: START, to: '2027-03-20' } };
@@ -30,11 +30,13 @@ const crew = (skill: string, level: number, history: Period[] = []): CrewInput =
 
 const slot = (skill: string, minLevel: number): Slot => ({ skill, minLevel, number: 1, headcount: 1 });
 
-const componentOf = (name: string, candidate: CrewInput, required: Slot) => {
-  const scorer = SCORERS.find((entry) => entry.name === name);
-  if (!scorer) throw new Error(`No scorer named ${name}`);
-  return scorer.score({ crew: candidate, need: required, mission: MISSION });
+/** One component of a candidate's score for a slot: its value, and what it was worked out from. */
+const measured = (name: string, candidate: CrewInput, required: Slot) => {
+  const component = scoreCandidate({ crew: candidate, need: required, mission: MISSION }, DEFAULT_MATCH_WEIGHTS).components.find((each) => each.name === name);
+  if (!component) throw new Error(`No component named ${name}`);
+  return component;
 };
+const componentOf = (name: string, candidate: CrewInput, required: Slot) => measured(name, candidate, required).value;
 
 /** The score as a person reads it, out of 100. */
 const points = (candidate: CrewInput, required: Slot) =>
@@ -85,6 +87,23 @@ describe('the scorers of DESIGN.md section 6.4', () => {
       ['rest', 0],
     ]);
     expect(scored.components.find((component) => component.name === 'proficiency')).toMatchObject({ value: 0.8, points: 0.4 });
+  });
+});
+
+describe('what each component was worked out from, so a person can be told why', () => {
+  it('gives the level held for proficiency', () => {
+    expect(measured('proficiency', crew('pilot', 5), slot('pilot', 3))).toMatchObject({ name: 'proficiency', level: 5 });
+  });
+
+  it('gives the days assigned for workload balance, out of the 180 days around the start', () => {
+    expect(measured('workload', crew('pilot', 3, [before(45, 10)]), slot('pilot', 3))).toMatchObject({ name: 'workload', daysAssigned: 45, windowDays: 180 });
+    expect(measured('workload', crew('pilot', 3), slot('pilot', 3))).toMatchObject({ daysAssigned: 0, windowDays: 180 });
+  });
+
+  it('gives the days rested, uncapped, and none for a crew member who has never flown', () => {
+    expect(measured('rest', crew('pilot', 3, [before(10, 12)]), slot('pilot', 3))).toMatchObject({ name: 'rest', daysRested: 12 });
+    expect(measured('rest', crew('pilot', 3, [before(10, 45)]), slot('pilot', 3))).toMatchObject({ daysRested: 45, value: 1 });
+    expect(measured('rest', crew('pilot', 3), slot('pilot', 3))).toMatchObject({ daysRested: null, value: 1 });
   });
 });
 

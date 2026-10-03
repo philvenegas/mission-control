@@ -1,7 +1,7 @@
 import { parseRef } from '@mission-control/contract';
 import { assessCandidate } from './assess.ts';
 import { type ConstraintFailure, failuresOf, HARD_CONSTRAINTS } from './constraints.ts';
-import type { CrewInput, MatchedMission, MatchInput, MissionSummary, RequirementInput, Slot } from './input.ts';
+import { type CrewInput, type MatchedMission, type MatchInput, type MissionSummary, type RequirementInput, type Slot, skillRecord } from './input.ts';
 import type { Score } from './scorers.ts';
 import { solveAssignment } from './solver.ts';
 
@@ -30,6 +30,8 @@ export type LossReason = Exclude<ConstraintFailure['constraint'], 'skill'> | 'no
 
 export interface NearestMiss {
   crewMember: CrewMemberSummary;
+  /** The level they hold the slot's skill at; a nearest miss always holds it. */
+  level: number;
   /** Everything they lack for the slot. */
   failures: ConstraintFailure[];
 }
@@ -88,9 +90,6 @@ const lossReason = ([first]: ConstraintFailure[]): LossReason => {
 /** How many levels short of the slot a crew member who holds its skill is; none when they meet it. */
 const levelsShort = (failures: ConstraintFailure[]) =>
   failures.reduce((short, failure) => (failure.constraint === 'skill' && failure.level !== null ? failure.minLevel - failure.level : short), 0);
-
-/** Whether a crew member holds the slot's skill at some level: a near miss, rather than a stranger to it. */
-const holdsTheSkill = (failures: ConstraintFailure[]) => !failures.some((failure) => failure.constraint === 'skill' && failure.level === null);
 
 /** One crew member considered for one slot: why they are not a candidate, or their score. */
 interface Pairing {
@@ -159,7 +158,7 @@ export function match(input: MatchInput): MatchOutput {
         chosenForAnotherSlot: chosenColumns.has(pairing.column),
         clashes: pairing.clashes,
       })),
-      unfilled: chosen ? null : explainUnfilled(pairings),
+      unfilled: chosen ? null : explainUnfilled(slot.skill, pairings),
     };
   });
 
@@ -177,15 +176,18 @@ export function match(input: MatchInput): MatchOutput {
   };
 }
 
-function explainUnfilled(pairings: Pairing[]): NonNullable<SlotResult['unfilled']> {
+function explainUnfilled(skill: string, pairings: Pairing[]): NonNullable<SlotResult['unfilled']> {
   const lost = pairings.map((pairing) => lossReason(pairing.failures));
   const lostTo = LOSS_ORDER.map((reason) => ({ reason, count: lost.filter((each) => each === reason).length })).filter(({ count }) => count > 0);
   // Those who hold the skill, fewest failures first, then the fewest levels short.
   const nearestMisses = pairings
-    .filter((pairing) => pairing.failures.length > 0 && holdsTheSkill(pairing.failures))
-    .sort((a, b) => a.failures.length - b.failures.length || levelsShort(a.failures) - levelsShort(b.failures) || a.column - b.column)
+    .flatMap((pairing) => {
+      const held = skillRecord(pairing.crew, skill);
+      return pairing.failures.length > 0 && held ? [{ pairing, level: held.level }] : [];
+    })
+    .sort((a, b) => a.pairing.failures.length - b.pairing.failures.length || levelsShort(a.pairing.failures) - levelsShort(b.pairing.failures) || a.pairing.column - b.pairing.column)
     .slice(0, MAX_NEAREST_MISSES)
-    .map((pairing) => ({ crewMember: summarise(pairing.crew), failures: pairing.failures }));
+    .map(({ pairing, level }) => ({ crewMember: summarise(pairing.crew), level, failures: pairing.failures }));
   return { lostTo, nearestMisses };
 }
 
