@@ -1,4 +1,11 @@
-import type { ApprovalDecision, AssignmentStatus, MissionEventType, MissionStatus, Period } from '@mission-control/contract';
+import {
+  type ApprovalDecision,
+  type AssignmentStatus,
+  CREW_VISIBLE_ASSIGNMENT_STATUSES,
+  type MissionEventType,
+  type MissionStatus,
+  type Period,
+} from '@mission-control/contract';
 import { and, asc, count, eq, inArray, ne, type SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { exactlyOne } from '../../db/rows.ts';
@@ -20,8 +27,7 @@ function selectMissions({ tx, orgId }: TenantContext, condition?: SQL) {
       ownerId: missions.ownerId,
       owner: { name: owners.name, email: owners.email },
       submittedById: missions.submittedBy,
-      submitterName: submitters.name,
-      submitterEmail: submitters.email,
+      submittedBy: { name: submitters.name, email: submitters.email },
       submissionNo: missions.submissionNo,
     })
     .from(missions)
@@ -79,7 +85,7 @@ export function listStaffedMissions({ tx, orgId }: TenantContext, userId: string
       and(
         eq(assignments.orgId, orgId),
         eq(crewMembers.userId, userId),
-        inArray(assignments.status, ['offered', 'accepted']),
+        inArray(assignments.status, [...CREW_VISIBLE_ASSIGNMENT_STATUSES]),
         missionRef === undefined ? undefined : eq(missions.ref, missionRef),
       ),
     )

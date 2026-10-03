@@ -1,4 +1,10 @@
-import { MISSION_STATUSES, type MissionStatus, TRANSITIONS as CONTRACT_TRANSITIONS } from '@mission-control/contract';
+import {
+  type AssignmentStatus,
+  MIN_LEVEL,
+  MISSION_STATUSES,
+  type MissionStatus,
+  TRANSITIONS as CONTRACT_TRANSITIONS,
+} from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { type Caller, loginAs, useSeededApp } from '../../test/app.ts';
 
@@ -52,7 +58,9 @@ const CASES = MISSION_STATUSES.flatMap((status) =>
   TRANSITIONS.flatMap((transition) => ACTORS.map((actor) => ({ status, transition, actor, expected: expectedAnswer(actor, transition, status) }))),
 );
 
+/** The table's missions are numbered from here, well clear of the seeded ones. */
 const FIRST_REF = 1000;
+const DAY_MS = 86_400_000;
 let callers: Record<Actor, Caller>;
 
 beforeAll(async () => {
@@ -68,24 +76,25 @@ beforeAll(async () => {
   // slot accepted (by Ben), so only the status and the role decide the answer.
   for (const [index, { status }] of CASES.entries()) {
     const ref = FIRST_REF + index;
-    const day = new Date(Date.UTC(2030, 0, 1) + index * 2 * 86_400_000).toISOString().slice(0, 10);
+    const day = new Date(Date.UTC(2030, 0, 1) + index * 2 * DAY_MS).toISOString().slice(0, 10);
+    const [draft, approved, accepted]: [MissionStatus, MissionStatus, AssignmentStatus] = ['draft', 'approved', 'accepted'];
     await owner`
       WITH org AS (SELECT id FROM organisations WHERE slug = 'artemis'),
       sam AS (SELECT id FROM users WHERE email = 'sam@artemis.example'),
       mission AS (
         INSERT INTO missions (org_id, ref, name, period, status, owner_id, submitted_by, submission_no)
         SELECT org.id, ${ref}, ${`Table ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, sam.id,
-               CASE WHEN ${status} = 'draft' THEN NULL ELSE sam.id END, CASE WHEN ${status} = 'draft' THEN 0 ELSE 1 END
+               CASE WHEN ${status} = ${draft} THEN NULL ELSE sam.id END, CASE WHEN ${status} = ${draft} THEN 0 ELSE 1 END
         FROM org, sam RETURNING id, org_id, period, owner_id),
       requirement AS (
         INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level)
-        SELECT mission.org_id, mission.id, skills.id, 1 FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = 'pilot'
+        SELECT mission.org_id, mission.id, skills.id, ${MIN_LEVEL} FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = 'pilot'
         RETURNING id, mission_id)
       INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-      SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, 'accepted', mission.owner_id
+      SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, ${accepted}, mission.owner_id
       FROM mission JOIN requirement ON requirement.mission_id = mission.id
       JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.name = 'Ben Osei'
-      WHERE ${status} = 'approved'`;
+      WHERE ${status} = ${approved}`;
   }
 });
 

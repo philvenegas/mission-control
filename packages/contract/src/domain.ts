@@ -24,6 +24,12 @@ export type AssignmentStatus = (typeof ASSIGNMENT_STATUSES)[number];
 /** A live assignment holds its crew member for its period. */
 export const LIVE_ASSIGNMENT_STATUSES = ['held', 'offered', 'accepted'] as const satisfies readonly AssignmentStatus[];
 
+/**
+ * A crew member sees a mission once they are offered a place on it, and while they hold it. A held
+ * assignment is not among these: they are not told of a mission that is still awaiting approval.
+ */
+export const CREW_VISIBLE_ASSIGNMENT_STATUSES = ['offered', 'accepted'] as const satisfies readonly AssignmentStatus[];
+
 export const APPROVAL_DECISIONS = ['approve', 'reject'] as const;
 export type ApprovalDecision = (typeof APPROVAL_DECISIONS)[number];
 

@@ -1,19 +1,33 @@
-import { type AssignmentStatus, formatRef, LIVE_ASSIGNMENT_STATUSES, type MissionStatus, type Transition } from '@mission-control/contract';
-import type { Permission } from '../../auth/policy.ts';
+import {
+  type AssignmentStatus,
+  formatRef,
+  LIVE_ASSIGNMENT_STATUSES,
+  type MissionStatus,
+  ROLES,
+  type Transition,
+} from '@mission-control/contract';
+import { can, type Permission, reaches } from '../../auth/policy.ts';
 import type { TenantContext } from '../../db/tenant.ts';
-import { DomainError } from '../../errors.ts';
+import { DomainError, forbidden } from '../../errors.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { approvalState } from './approval.ts';
 import {
   countAssignmentsByRequirement,
   countDirectorsOtherThan,
+  getMissionByRef,
   insertDecision,
+  insertEvent,
   listCurrentDecisions,
   listRequirements,
+  lockMission,
   type MissionRow,
   moveAssignments,
+  moveMission,
   startSubmission,
 } from './repository.ts';
+
+// The mission lifecycle (DESIGN.md section 4): the transition table, and the one function that
+// makes a transition by it. Every status change goes through here.
 
 /** One transition in progress: who is making it, on which mission, with what note. */
 interface TransitionRun {
@@ -23,10 +37,10 @@ interface TransitionRun {
 }
 
 /**
- * One row of the transition table (DESIGN.md section 4): from which statuses a transition may be
- * made, to which status it leads, which permission it needs, what must hold, and what it does.
+ * One row of the transition table: from which statuses a transition may be made, to which status
+ * it leads, which permission it needs, what must hold, and what it does.
  */
-export interface TransitionRule {
+interface TransitionRule {
   transition: Transition;
   from: readonly MissionStatus[];
   to: MissionStatus;
@@ -44,7 +58,7 @@ export interface TransitionRule {
   effect?: (run: TransitionRun) => Promise<void>;
 }
 
-const ref = (mission: MissionRow) => formatRef('mission', mission.ref);
+const missionRef = (mission: MissionRow) => formatRef('mission', mission.ref);
 
 const guardFailed = (message: string, hint?: string) => new DomainError('GUARD_FAILED', message, hint);
 
@@ -54,7 +68,11 @@ const moveCrew = (from: readonly AssignmentStatus[], to: AssignmentStatus) => as
 /** Whoever submitted a mission cannot decide on it, whatever their role. */
 const notTheSubmitter = (verb: 'approve' | 'reject') => async ({ context, mission }: TransitionRun) => {
   if (mission.submittedById === context.userId) {
-    throw new DomainError('SELF_APPROVAL_FORBIDDEN', `You submitted ${ref(mission)}, so you cannot ${verb} it.`, `Ask another director to ${verb} it.`);
+    throw new DomainError(
+      'SELF_APPROVAL_FORBIDDEN',
+      `You submitted ${missionRef(mission)}, so you cannot ${verb} it.`,
+      `Ask another director to ${verb} it.`,
+    );
   }
 };
 
@@ -64,27 +82,33 @@ const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ?
 const today = () => new Date().toISOString().slice(0, 10);
 
 async function submitGuard({ context, mission }: TransitionRun) {
-  const refusal = (reason: string) => guardFailed(`${ref(mission)} cannot be submitted: ${reason}.`);
   if ((await listRequirements(context, [mission.id])).length === 0) {
-    throw refusal('it has no requirements');
+    throw guardFailed(`${missionRef(mission)} cannot be submitted: it has no requirements.`);
   }
   if (mission.period.from <= today()) {
-    throw refusal(`it starts on ${mission.period.from}, which is not in the future`);
+    throw guardFailed(`${missionRef(mission)} cannot be submitted: it starts on ${mission.period.from}, which is not in the future.`);
   }
   const { name, settings } = await getOrganisation(context);
   const directors = await countDirectorsOtherThan(context, context.userId);
   if (directors < settings.approvals_required) {
-    throw refusal(
-      `${name} requires ${plural(settings.approvals_required, 'approval')}, but only ${plural(directors, 'director')} other than you can approve`,
+    // The design's own words (section 4): a mission never waits on an approval that cannot come.
+    throw guardFailed(
+      `${name} requires ${plural(settings.approvals_required, 'approval')}, but only ${plural(directors, 'director')} other than you can approve.`,
     );
   }
+}
+
+/** Starts a new submission made by the caller, and holds the crew the draft proposed. */
+async function startSubmissionAndHold(run: TransitionRun) {
+  await startSubmission(run.context, run.mission.id);
+  await moveCrew(['proposed'], 'held')(run);
 }
 
 /** Approves the current submission for the caller, and says whether the approval policy is now met. */
 async function recordApproval({ context, mission, note }: TransitionRun) {
   const decisions = await listCurrentDecisions(context, [mission.id]);
   if (decisions.some((decision) => decision.approverId === context.userId)) {
-    throw guardFailed(`You have already approved ${ref(mission)}.`);
+    throw guardFailed(`You have already approved ${missionRef(mission)}.`);
   }
   await insertDecision(context, { missionId: mission.id, submissionNo: mission.submissionNo, decision: 'approve', note });
   const { settings } = await getOrganisation(context);
@@ -99,18 +123,23 @@ async function recordRejection({ context, mission, note }: TransitionRun) {
 
 async function everySlotAccepted({ context, mission }: TransitionRun) {
   const requirements = await countAssignmentsByRequirement(context, mission.id, 'accepted');
-  const short = requirements.filter((requirement) => requirement.crew < requirement.headcount);
-  if (short.length > 0) {
-    const fill = short.map((requirement) => `${requirement.skill} ${requirement.crew} of ${requirement.headcount}`).join(', ');
-    throw guardFailed(`${ref(mission)} cannot be launched until every slot is accepted: ${fill}.`);
+  const unfilled = requirements.filter((requirement) => requirement.crew < requirement.headcount);
+  if (unfilled.length > 0) {
+    const fillCounts = unfilled.map((requirement) => `${requirement.skill} ${requirement.crew} of ${requirement.headcount}`).join(', ');
+    throw guardFailed(`${missionRef(mission)} cannot be launched until every slot is accepted: ${fillCounts}.`);
   }
 }
 
-/** The assignments a cancellation releases: proposals, and every hold. */
-const RELEASED_ON_CANCEL = ['proposed', ...LIVE_ASSIGNMENT_STATUSES] as const;
+/** Cancelling releases proposals and every hold, whoever cancels and from whichever status. */
+const CANCEL = {
+  transition: 'cancel',
+  to: 'cancelled',
+  needsNote: true,
+  effect: moveCrew(['proposed', ...LIVE_ASSIGNMENT_STATUSES], 'released'),
+} as const;
 
 /** The whole lifecycle. A transition not listed here, or from a status not listed, cannot happen. */
-export const TRANSITION_TABLE: readonly TransitionRule[] = [
+const TRANSITION_TABLE: readonly TransitionRule[] = [
   {
     transition: 'submit',
     from: ['draft'],
@@ -118,10 +147,7 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
     permission: 'missions:submit',
     needsNote: false,
     guard: submitGuard,
-    effect: async (run) => {
-      await startSubmission(run.context, run.mission.id);
-      await moveCrew(['proposed'], 'held')(run);
-    },
+    effect: startSubmissionAndHold,
   },
   {
     transition: 'approve',
@@ -158,20 +184,76 @@ export const TRANSITION_TABLE: readonly TransitionRule[] = [
     permission: 'missions:complete',
     needsNote: false,
   },
-  {
-    transition: 'cancel',
-    from: ['draft', 'submitted', 'approved'],
-    to: 'cancelled',
-    permission: 'missions:cancel',
-    needsNote: true,
-    effect: moveCrew(RELEASED_ON_CANCEL, 'released'),
-  },
-  {
-    transition: 'cancel',
-    from: ['active'],
-    to: 'cancelled',
-    permission: 'missions:cancel-active',
-    needsNote: true,
-    effect: moveCrew(RELEASED_ON_CANCEL, 'released'),
-  },
+  { ...CANCEL, from: ['draft', 'submitted', 'approved'], permission: 'missions:cancel' },
+  { ...CANCEL, from: ['active'], permission: 'missions:cancel-active' },
 ];
+
+/** The transitions the table holds. `withdraw` is designed, not built, so it is not among them. */
+export const BUILT_TRANSITIONS: readonly Transition[] = [...new Set(TRANSITION_TABLE.map((rule) => rule.transition))];
+
+/** Whether a transition needs a note saying why. */
+export const needsNote = (transition: Transition) => TRANSITION_TABLE.some((rule) => rule.transition === transition && rule.needsNote);
+
+/**
+ * The permission a transition's route declares: of the permissions its rows need, the one held by
+ * every role that holds any of them, so the route lets through everyone who may make it from some
+ * status, and its row decides the rest.
+ */
+export function routePermission(transition: Transition): Permission {
+  const permissions = TRANSITION_TABLE.filter((rule) => rule.transition === transition).map((rule) => rule.permission);
+  const widest = permissions.find((candidate) =>
+    ROLES.every((role) => !permissions.some((permission) => can(role, permission)) || can(role, candidate)),
+  );
+  if (!widest) throw new Error(`No one permission covers every role that may ${transition}`);
+  return widest;
+}
+
+/** How a refusal names a transition once made: "it cannot be submitted". */
+const PAST_PARTICIPLE: Record<Transition, string> = {
+  submit: 'submitted',
+  withdraw: 'withdrawn',
+  approve: 'approved',
+  reject: 'rejected',
+  launch: 'launched',
+  complete: 'completed',
+  cancel: 'cancelled',
+};
+
+const transitionNotAllowed = (mission: MissionRow, transition: Transition) =>
+  new DomainError('TRANSITION_NOT_ALLOWED', `${missionRef(mission)} is ${mission.status}, so it cannot be ${PAST_PARTICIPLE[transition]}.`);
+
+/**
+ * Makes a transition on a mission the caller can see, as the table says: from the statuses it
+ * allows, by those it permits, when its guard holds. The status changes only if it is still the one
+ * the guard saw, and the event is written in the same transaction.
+ */
+export async function runTransition(context: TenantContext, visible: MissionRow, transition: Transition, note: string | null) {
+  // One transition on a mission at a time: a second waits, then reads what the first did.
+  await lockMission(context, visible.id);
+  const mission = await getMissionByRef(context, visible.ref);
+
+  const rule = TRANSITION_TABLE.find((candidate) => candidate.transition === transition && candidate.from.includes(mission.status));
+  if (!rule) throw transitionNotAllowed(mission, transition);
+  if (!reaches(context, rule.permission, mission.ownerId)) {
+    throw forbidden(
+      can(context.role, rule.permission)
+        ? `Only ${missionRef(mission)}'s owner or a director can ${transition} it.`
+        : `Only a director can ${transition} ${missionRef(mission)} now that it is ${mission.status}.`,
+    );
+  }
+
+  const run = { context, mission, note };
+  await rule.guard?.(run);
+  const statusChanges = rule.decide ? await rule.decide(run) : true;
+  if (statusChanges) {
+    if (!(await moveMission(context, mission.id, mission.status, rule.to))) throw transitionNotAllowed(mission, transition);
+    await rule.effect?.(run);
+  }
+  await insertEvent(context, {
+    missionId: mission.id,
+    type: transition,
+    fromStatus: mission.status,
+    toStatus: statusChanges ? rule.to : mission.status,
+    note,
+  });
+}

@@ -31,7 +31,7 @@ const PERMISSIONS = {
   'availability:manage': { director: 'all', crew_member: 'own' },
   /** Read missions. A crew member reads only those they are offered or accepted on, and only their own slot. */
   'missions:read': { director: 'all', mission_lead: 'all', crew_member: 'own' },
-  /** Create a mission, which the creator then owns. */
+  /** Create a mission, which the user who creates it then owns. */
   'missions:create': { director: 'all', mission_lead: 'all' },
   /** Change a draft: its details, period and requirements. */
   'missions:edit': { director: 'all', mission_lead: 'own' },

@@ -1,4 +1,11 @@
-import { availabilityBlockSchema } from '@mission-control/contract';
+import {
+  type AssignmentStatus,
+  availabilityBlockSchema,
+  MIN_LEVEL,
+  type MissionStatus,
+  parseRef,
+  type Role,
+} from '@mission-control/contract';
 import { describe, expect, it } from 'vitest';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../test/app.ts';
 import { routeKey } from './route.ts';
@@ -34,33 +41,38 @@ interface OwnRecords {
 // Artemis has CRW-9 to CRW-12, AVL-1 to AVL-3, MSN-3 to MSN-7 and a pilot skill; Helios Labs has none of them.
 const ARTEMIS_ONLY = { crewMember: 'CRW-12', availabilityBlock: 'AVL-1', skill: 'pilot', mission: 'MSN-7' };
 
-let arranged = 5000;
+/** Arranged missions are numbered from here, well clear of any the API numbers in this test. */
+const FIRST_ARRANGED_REF = 5000;
+let arranged = FIRST_ARRANGED_REF;
+const DAY_MS = 86_400_000;
 
 /**
  * A mission of the caller's organisation in the given status, owned and submitted by its mission
  * lead, needing one of its own skill, so that each transition's guard holds: an approved one has its
- * slot accepted. Arranged as the owner, since crew cannot yet respond through the API.
+ * slot accepted by the caller's own crew member. Each has its own two days of 2031. Arranged as the
+ * owner, since crew cannot yet respond through the API.
  */
-async function missionIn(own: OwnRecords, status: 'draft' | 'submitted' | 'approved' | 'active') {
+async function missionIn(own: OwnRecords, status: MissionStatus) {
   const ref = arranged++;
-  const day = new Date(Date.UTC(2031, 0, 1) + (ref - 5000) * 2 * 86_400_000).toISOString().slice(0, 10);
+  const day = new Date(Date.UTC(2031, 0, 1) + (ref - FIRST_ARRANGED_REF) * 2 * DAY_MS).toISOString().slice(0, 10);
+  const [draft, approved, accepted, missionLead]: [MissionStatus, MissionStatus, AssignmentStatus, Role] = ['draft', 'approved', 'accepted', 'mission_lead'];
   await owner`
     WITH org AS (SELECT id FROM organisations WHERE slug = ${own.slug}),
-    lead AS (SELECT id FROM users WHERE org_id = (SELECT id FROM org) AND role = 'mission_lead' ORDER BY email LIMIT 1),
+    mission_lead_user AS (SELECT id FROM users WHERE org_id = (SELECT id FROM org) AND role = ${missionLead} ORDER BY email LIMIT 1),
     mission AS (
       INSERT INTO missions (org_id, ref, name, period, status, owner_id, submitted_by, submission_no)
-      SELECT org.id, ${ref}, ${`Sweep ${own.slug} ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, lead.id,
-             CASE WHEN ${status} = 'draft' THEN NULL ELSE lead.id END, CASE WHEN ${status} = 'draft' THEN 0 ELSE 1 END
-      FROM org, lead RETURNING id, org_id, period, owner_id),
+      SELECT org.id, ${ref}, ${`Sweep ${own.slug} ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, mission_lead_user.id,
+             CASE WHEN ${status} = ${draft} THEN NULL ELSE mission_lead_user.id END, CASE WHEN ${status} = ${draft} THEN 0 ELSE 1 END
+      FROM org, mission_lead_user RETURNING id, org_id, period, owner_id),
     requirement AS (
       INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level)
-      SELECT mission.org_id, mission.id, skills.id, 1 FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = ${own.skill}
+      SELECT mission.org_id, mission.id, skills.id, ${MIN_LEVEL} FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = ${own.skill}
       RETURNING id, mission_id)
     INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-    SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, 'accepted', mission.owner_id
+    SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, ${accepted}, mission.owner_id
     FROM mission JOIN requirement ON requirement.mission_id = mission.id
-    JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.ref = 2
-    WHERE ${status} = 'approved'`;
+    JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.ref = ${parseRef('crew_member', own.crewMember)}
+    WHERE ${status} = ${approved}`;
   return `MSN-${ref}`;
 }
 

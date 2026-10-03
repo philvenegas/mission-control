@@ -100,7 +100,7 @@ const SAM = { name: 'Sam Okafor', email: 'sam@artemis.example' };
 const EUROPA = { name: 'Europa Survey', from: '2027-03-01', to: '2027-03-20' };
 
 describe('creating and changing a mission', () => {
-  it('creates a draft with the next reference, owned by its creator', async () => {
+  it('creates a draft with the next reference, owned by the user who made it', async () => {
     const created = await sam.post('/v1/missions', EUROPA);
     expect(created.status).toBe(201);
     expect(await mission(created)).toEqual({
@@ -257,7 +257,7 @@ describe('submitting a mission', () => {
     try {
       const ref = await readyDraft(dana, 'comms');
       expect(await error(await dana.post(`/v1/missions/${ref}/submit`, {}))).toMatchObject({
-        message: `${ref} cannot be submitted: Artemis requires 2 approvals, but only 1 director other than you can approve.`,
+        message: 'Artemis requires 2 approvals, but only 1 director other than you can approve.',
       });
     } finally {
       await owner`UPDATE organisations SET settings = jsonb_set(settings, '{approvals_required}', '1') WHERE slug = 'artemis'`;
@@ -268,7 +268,7 @@ describe('submitting a mission', () => {
       expect(await error(await ines.post(`/v1/missions/${ref}/submit`, {}))).toMatchObject({
         status: 409,
         code: 'GUARD_FAILED',
-        message: `${ref} cannot be submitted: Helios Labs requires 3 approvals, but only 2 directors other than you can approve.`,
+        message: 'Helios Labs requires 3 approvals, but only 2 directors other than you can approve.',
       });
       // A mission lead is not a director, so all three directors can approve.
       const farid = await loginAs(app, 'helios', 'farid@helios.example');

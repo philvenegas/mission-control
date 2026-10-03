@@ -4,35 +4,31 @@ import {
   formatRef,
   type Mission,
   type MissionEvent,
-  type MissionStatus,
   type SetRequirement,
   type Transition,
   type UpdateMission,
 } from '@mission-control/contract';
-import { can, type Permission, reaches, scopeOf } from '../../auth/policy.ts';
+import { type Permission, reaches, scopeOf } from '../../auth/policy.ts';
 import { exactlyOne } from '../../db/rows.ts';
 import { refNumber, takeNextRef } from '../../db/refs.ts';
 import type { TenantContext } from '../../db/tenant.ts';
 import { DomainError, forbidden, notFound } from '../../errors.ts';
 import { getOrganisation } from '../org/repository.ts';
 import { getSkill } from '../skills/service.ts';
-import { TRANSITION_TABLE } from './lifecycle.ts';
+import { runTransition } from './lifecycle.ts';
 import {
   countCrewInRequirement,
   deleteRequirement,
   findMissionByRef,
   findRequirement,
   getMissionByRef,
-  insertEvent,
   insertMission,
   listCurrentDecisions,
   listEvents,
   listMissions,
   listRequirements,
   listStaffedMissions,
-  lockMission,
   type MissionRow,
-  moveMission,
   updateMission,
   upsertRequirement,
 } from './repository.ts';
@@ -55,7 +51,7 @@ async function toMissions(context: TenantContext, rows: MissionRow[]): Promise<M
     to: row.period.to,
     status: row.status,
     owner: row.owner,
-    submitted_by: row.submitterName === null || row.submitterEmail === null ? null : { name: row.submitterName, email: row.submitterEmail },
+    submitted_by: row.submittedBy,
     requirements: requirements
       .filter((requirement) => requirement.missionId === row.id)
       .map((requirement) => ({ skill: requirement.skill, min_level: requirement.minLevel, headcount: requirement.headcount })),
@@ -197,49 +193,9 @@ export async function missionHistory(context: TenantContext, missionRef: string)
   }));
 }
 
-/** How a refusal names a transition that has happened: "it cannot be submitted". */
-const DONE: Record<Transition, string> = {
-  submit: 'submitted',
-  withdraw: 'withdrawn',
-  approve: 'approved',
-  reject: 'rejected',
-  launch: 'launched',
-  complete: 'completed',
-  cancel: 'cancelled',
-};
-
-/**
- * Makes a transition, as the transition table says: from the statuses it allows, by those it
- * permits, when its guard holds. The status changes only if it is still the one the guard saw, and
- * the event is written in the same transaction. Every status change goes through here.
- */
+/** Makes a transition on a mission the caller can see, by the transition table, and gives the mission as it now is. */
 export async function makeTransition(context: TenantContext, missionRef: string, transition: Transition, note: string | null): Promise<Mission> {
-  const found = await resolveMission(context, missionRef);
-  // One transition on a mission at a time: a second waits, then sees what the first did.
-  await lockMission(context, found.id);
-  const mission = await getMissionByRef(context, found.ref);
-
-  const rule = TRANSITION_TABLE.find((candidate) => candidate.transition === transition && candidate.from.includes(mission.status));
-  if (!rule) throw transitionNotAllowed(missionRef, mission.status, transition);
-  if (!reaches(context, rule.permission, mission.ownerId)) {
-    throw forbidden(
-      can(context.role, rule.permission)
-        ? `Only ${missionRef}'s owner or a director can ${transition} it.`
-        : `Only a director can ${transition} ${missionRef} now that it is ${mission.status}.`,
-    );
-  }
-
-  const run = { context, mission, note };
-  await rule.guard?.(run);
-  const moves = rule.decide ? await rule.decide(run) : true;
-  const to = moves ? rule.to : mission.status;
-  if (moves) {
-    if (!(await moveMission(context, mission.id, mission.status, rule.to))) throw transitionNotAllowed(missionRef, mission.status, transition);
-    await rule.effect?.(run);
-  }
-  await insertEvent(context, { missionId: mission.id, type: transition, fromStatus: mission.status, toStatus: to, note });
+  const mission = await resolveMission(context, missionRef);
+  await runTransition(context, mission, transition, note);
   return describeMission(context, mission);
 }
-
-const transitionNotAllowed = (missionRef: string, status: MissionStatus, transition: Transition) =>
-  new DomainError('TRANSITION_NOT_ALLOWED', `${missionRef} is ${status}, so it cannot be ${DONE[transition]}.`);

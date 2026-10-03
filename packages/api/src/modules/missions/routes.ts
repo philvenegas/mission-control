@@ -6,13 +6,11 @@ import {
   noteOptionalSchema,
   noteRequiredSchema,
   setRequirementSchema,
-  type Transition,
   updateMissionSchema,
 } from '@mission-control/contract';
-import type { Permission } from '../../auth/policy.ts';
 import { pathParam, readBody } from '../../http/request.ts';
 import type { Route } from '../../http/route.ts';
-import { TRANSITION_TABLE } from './lifecycle.ts';
+import { BUILT_TRANSITIONS, needsNote, routePermission } from './lifecycle.ts';
 import {
   changeMission,
   createMission,
@@ -72,26 +70,12 @@ const recordRoutes: Route[] = [
   },
 ];
 
-/** The transitions the API offers. `withdraw` is designed, not built. */
-const BUILT_TRANSITIONS = ['submit', 'approve', 'reject', 'launch', 'complete', 'cancel'] as const satisfies readonly Transition[];
-
-/** The permission a route for each transition declares: the broadest any row of the table needs for it. */
-const ROUTE_PERMISSION = {
-  submit: 'missions:submit',
-  approve: 'missions:approve',
-  reject: 'missions:reject',
-  launch: 'missions:launch',
-  complete: 'missions:complete',
-  cancel: 'missions:cancel',
-} as const satisfies Record<(typeof BUILT_TRANSITIONS)[number], Permission>;
-
 const transitionRoutes: Route[] = BUILT_TRANSITIONS.map((transition) => ({
   method: 'POST',
   path: `/v1/missions/:ref/${transition}`,
-  permission: ROUTE_PERMISSION[transition],
+  permission: routePermission(transition),
   handler: async (c) => {
-    const needsNote = TRANSITION_TABLE.some((rule) => rule.transition === transition && rule.needsNote);
-    const { note } = await readBody(c, needsNote ? noteRequiredSchema : noteOptionalSchema);
+    const { note } = await readBody(c, needsNote(transition) ? noteRequiredSchema : noteOptionalSchema);
     return c.json<Mission>(await makeTransition(c.var.tenant, pathParam(c, 'ref'), transition, note ?? null));
   },
 }));
