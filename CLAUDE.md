@@ -17,7 +17,7 @@ pnpm test            # unit tests; no database
 pnpm test:int        # integration tests, against the test database
 pnpm test:coverage   # both, with every file's uncovered lines
 pnpm build           # typecheck every package
-pnpm lint            # casts, `!`, unused exports and files
+pnpm lint            # casts, `!`, unused exports and files, glossary words
 pnpm demo:login      # six demo CLI profiles, lead current; then bin/mctl <command>
 ```
 

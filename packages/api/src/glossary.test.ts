@@ -63,14 +63,14 @@ const AMBIGUOUS: Record<string, string> = {
 /** Where the design itself fixes a name that contains an avoided word (CODING_STANDARDS.md, "Names"). */
 const FIXED_BY_DESIGN = ['no double booking', 'double booking', 'booking rule'];
 
-/** Files where one avoided word is meant, and why. */
-const MEANT_IN: Record<string, { word: string; why: string }> = {
-  'packages/api/src/modules/missions/approval.ts': { word: 'pending', why: 'approvalState → pending | approved, as DESIGN.md section 4 names it' },
-  'packages/api/src/modules/missions/approval.test.ts': { word: 'pending', why: 'the same' },
-  'packages/api/src/db/schema.int.test.ts': { word: 'pending', why: 'a status the database must refuse' },
-  'packages/cli/src/profiles.test.ts': { word: 'lead', why: 'the demo profile `lead`, which DESIGN.md section 8 names' },
-  'packages/cli/src/cli.int.test.ts': { word: 'lead', why: 'the same' },
-  'packages/cli/src/bin.int.test.ts': { word: 'lead', why: 'the same' },
+/** Files where avoided words are meant, each with why. */
+const MEANT_IN: Record<string, { words: string[]; why: string }> = {
+  'packages/api/src/modules/missions/approval.ts': { words: ['pending'], why: 'approvalState → pending | approved, as DESIGN.md section 4 names it' },
+  'packages/api/src/modules/missions/approval.test.ts': { words: ['pending'], why: 'the same' },
+  'packages/api/src/db/schema.int.test.ts': { words: ['pending'], why: 'a status the database must refuse' },
+  'packages/cli/src/profiles.test.ts': { words: ['lead'], why: 'the demo profile `lead`, which DESIGN.md section 8 names' },
+  'packages/cli/src/cli.int.test.ts': { words: ['lead'], why: 'the same' },
+  'packages/cli/src/bin.int.test.ts': { words: ['lead'], why: 'the same' },
 };
 
 /** Each avoided word or phrase, as words, with the term it is avoided for. */
@@ -126,7 +126,7 @@ describe('the glossary in the code', () => {
   it('uses no avoided word in any source file, test or comment', () => {
     const found = sourceFiles.flatMap((file) =>
       avoidedIn(readFileSync(file, 'utf8'))
-        .filter(({ word }) => MEANT_IN[relative(root, file)]?.word !== word)
+        .filter(({ word }) => !(MEANT_IN[relative(root, file)]?.words ?? []).includes(word))
         .map(({ word, term }) => `${relative(root, file)}: ${word} (say ${term})`),
     );
     expect([...new Set(found)]).toEqual([]);

@@ -15,7 +15,7 @@
     "test": "vitest run --project unit",
     "test:int": "vitest run --project integration",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint . && knip"
+    "lint": "eslint . && knip && vitest run --project unit packages/api/src/glossary.test.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
