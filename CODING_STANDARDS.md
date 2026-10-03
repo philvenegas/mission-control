@@ -4,7 +4,7 @@ How code is written in this repository. `DESIGN.md` says what to build and `CONT
 
 A rule here outranks a general habit. Where a rule and `DESIGN.md` disagree, the design wins and the conflict is raised, not worked around.
 
-Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `knip`) and fail CI, so a review need not look for them.
+Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `knip`) or by a unit test, and fail CI, so a review need not look for them.
 
 ## Scope
 
@@ -15,7 +15,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `kn
 
 ## Names
 
-- **Use the glossary's term, in full.** `crewMember`, not `member`; `missionLeads`, not `leads`. The `_Avoid_` lists in `CONTEXT.md` apply to variables, test names, SQL aliases and comments, not only to prose.
+- **Use the glossary's term, in full** *(checked: `glossary.test.ts`)*. `crewMember`, not `member`; `missionLeads`, not `leads`. The `_Avoid_` lists in `CONTEXT.md` apply to variables, test names, SQL aliases and comments, not only to prose. A word avoided in one sense but right in another (`filter`, `role`) goes on the test's list of ambiguous words, with the reason; a review checks that reason.
 - **A name says what the value holds.** No `t`, `n`, `m`; no reusing one name for two things in a function. A list is named for what is in it (`betweenTenantTables`, not `single`).
 - **Where the design fixes a name, keep it,** even against the glossary (`no_double_booking`).
 
@@ -56,6 +56,7 @@ Rules marked *(checked)* are enforced by `pnpm lint` (`eslint.config.js` and `kn
 
 - **Every branch that can throw has a test,** including guards in scripts. The guard in front of raw SQL was the review's most serious finding precisely because it was untested. `pnpm test:coverage` lists every file's uncovered lines; a review checks each one the diff touches. CI fails if coverage falls below the thresholds in `vitest.config.ts`, which only ever rise.
 - **Write the test first** where the behaviour is known, and name it as behaviour: `refuses a second live assignment that overlaps, whatever the application does`.
+- **Arrange what the API cannot yet create through `test/arrange.ts`:** a mission already in a status, crew already in its slots. It takes references from the organisation's counters, as the API does. A test that hand-writes the same SQL instead is duplicated setup.
 - **Test through the real thing.** Database rules are tested against Postgres, not mocked. Unit tests (`*.test.ts`) need no database; integration tests (`*.int.test.ts`) use the test database.
 - **Assert the outcome a person would check:** calendar dates, references, names. Not row counts alone.
 - **No magic numbers.** Derive the expectation from the source (the list of tables from the schema), so the test stays true when the source grows.

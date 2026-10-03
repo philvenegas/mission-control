@@ -2,6 +2,7 @@ import { crewMissionSchema, errorResponseSchema, missionEventSchema, missionSche
 import { beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../../test/app.ts';
+import { arrangeCrew } from '../../test/arrange.ts';
 
 const { app, owner } = useSeededApp();
 
@@ -25,22 +26,6 @@ const mission = async (response: Response) => bodyOf(response, missionSchema);
 const error = async (response: Response) => ({ status: response.status, ...(await bodyOf(response, errorResponseSchema)).error });
 
 const PRIYA = { name: 'Priya Nair', email: 'priya@artemis.example' };
-
-let nextAssignmentRef = 900;
-
-/**
- * Proposes Artemis crew for a draft's only requirement, as applying a match run will once it is built.
- * Arranged as the owner, since this step has no route that proposes crew.
- */
-async function propose(missionName: string, crewNames: string[]) {
-  for (const crewName of crewNames) {
-    await owner`
-      INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-      SELECT m.org_id, ${nextAssignmentRef++}, m.id, r.id, c.id, m.period, 'proposed', m.owner_id
-      FROM missions m JOIN mission_requirements r ON r.mission_id = m.id JOIN crew_members c ON c.org_id = m.org_id
-      WHERE m.name = ${missionName} AND c.name = ${crewName}`;
-  }
-}
 
 describe('reading missions', () => {
   it('lists every mission of the organisation, by reference, to a director and a mission lead', async () => {
@@ -198,8 +183,11 @@ describe('creating and changing a mission', () => {
       code: 'REQUIREMENT_STAFFED',
       message: 'MSN-4 has 1 crew proposed as pilot.',
     });
-    // Titan Relay's two geologist slots, both proposed.
-    await propose('Titan Relay', ['Sven Dahl', 'Tala Moreno']);
+    // Titan Relay's two geologist slots, both proposed: Sven Dahl and Tala Moreno.
+    await arrangeCrew(owner, 'artemis', 'MSN-6', [
+      { crewMember: 'CRW-11', status: 'proposed' },
+      { crewMember: 'CRW-12', status: 'proposed' },
+    ]);
     expect(await error(await sam.put('/v1/missions/MSN-6/requirements/geologist', { min_level: 4, headcount: 1 }))).toMatchObject({
       status: 409,
       code: 'REQUIREMENT_STAFFED',

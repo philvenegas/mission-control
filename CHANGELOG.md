@@ -52,6 +52,9 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - A crew member sees only the missions they are offered or accepted on, and only their own slot.
 - Error codes `SELF_APPROVAL_FORBIDDEN`, `TRANSITION_NOT_ALLOWED`, `GUARD_FAILED`, `NOT_DRAFT` and `REQUIREMENT_STAFFED`.
 - A table-driven test of every transition, from every status, by every role.
+- The architecture test checks that a mission's status changes only through the lifecycle module (DESIGN.md section 9, rule 3).
+- A glossary test reads the words `CONTEXT.md` says to avoid and finds any in the source, tests and comments included.
+- `test/arrange.ts`: one way for tests to arrange missions and crew the API cannot yet create, taking references from the organisation's counters.
 
 ### Fixed
 
@@ -59,5 +62,6 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `PERMISSIONS` and `CrewSeed` are no longer exported, as nothing outside their files uses them.
 - A stored password hash cut short is now covered by a test.
 - Listing crew skills no longer special-cases an empty list of crew; the query handles it.
+- Names the glossary avoids, in tests: `member` for a crew member, `otherLead` for another mission lead.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main

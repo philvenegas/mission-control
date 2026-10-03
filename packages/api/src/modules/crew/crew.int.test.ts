@@ -52,8 +52,8 @@ describe('the skill taxonomy', () => {
 describe('reading crew', () => {
   it('lists every crew member, by reference, to a director and a mission lead', async () => {
     const expected = Array.from({ length: seededCrew(artemisSeed) }, (_, index) => formatRef('crew_member', index + 1));
-    expect((await crewList(dana)).map((member) => member.ref)).toEqual(expected);
-    expect((await crewList(sam)).map((member) => member.ref)).toEqual(expected);
+    expect((await crewList(dana)).map((crewMember) => crewMember.ref)).toEqual(expected);
+    expect((await crewList(sam)).map((crewMember) => crewMember.ref)).toEqual(expected);
   });
 
   it('shows a crew member with their skills, levels and certifications', async () => {
@@ -70,7 +70,7 @@ describe('reading crew', () => {
   });
 
   it('lets a crew member see their own record, as CRW-n or as me, and no one else\'s', async () => {
-    expect((await crewList(ada)).map((member) => member.ref)).toEqual(['CRW-1']);
+    expect((await crewList(ada)).map((crewMember) => crewMember.ref)).toEqual(['CRW-1']);
     const own = await crewMember(await ada.get('/v1/crew/me'));
     expect(own).toMatchObject({ ref: 'CRW-1', name: 'Ada Reyes', user_email: 'ada@artemis.example' });
     expect(await crewMember(await ada.get('/v1/crew/CRW-1'))).toEqual(own);

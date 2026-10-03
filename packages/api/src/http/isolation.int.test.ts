@@ -1,13 +1,7 @@
-import {
-  type AssignmentStatus,
-  availabilityBlockSchema,
-  MIN_LEVEL,
-  type MissionStatus,
-  parseRef,
-  type Role,
-} from '@mission-control/contract';
+import { availabilityBlockSchema, type MissionStatus } from '@mission-control/contract';
 import { describe, expect, it } from 'vitest';
 import { bodyOf, type Caller, loginAs, useSeededApp } from '../test/app.ts';
+import { arrangeMission, dayAfter } from '../test/arrange.ts';
 import { routeKey } from './route.ts';
 
 const { app, owner } = useSeededApp();
@@ -36,44 +30,31 @@ interface OwnRecords {
   draft: string;
   /** The organisation's slug, for arranging a mission in a given status. */
   slug: string;
+  /** A mission lead's email, to own an arranged mission. */
+  missionLead: string;
 }
 
 // Artemis has CRW-9 to CRW-12, AVL-1 to AVL-3, MSN-3 to MSN-7 and a pilot skill; Helios Labs has none of them.
 const ARTEMIS_ONLY = { crewMember: 'CRW-12', availabilityBlock: 'AVL-1', skill: 'pilot', mission: 'MSN-7' };
 
-/** Arranged missions are numbered from here, well clear of any the API numbers in this test. */
-const FIRST_ARRANGED_REF = 5000;
-let arranged = FIRST_ARRANGED_REF;
-const DAY_MS = 86_400_000;
+let arranged = 0;
 
 /**
  * A mission of the caller's organisation in the given status, owned and submitted by its mission
- * lead, needing one of its own skill, so that each transition's guard holds: an approved one has its
- * slot accepted by the caller's own crew member. Each has its own two days of 2031. Arranged as the
- * owner, since crew cannot yet respond through the API.
+ * lead and needing one of its own skills, so that each transition's guard holds: an approved one
+ * has its slot accepted by the caller's own crew member. Each is on its own day of 2031.
  */
-async function missionIn(own: OwnRecords, status: MissionStatus) {
-  const ref = arranged++;
-  const day = new Date(Date.UTC(2031, 0, 1) + (ref - FIRST_ARRANGED_REF) * 2 * DAY_MS).toISOString().slice(0, 10);
-  const [draft, approved, accepted, missionLead]: [MissionStatus, MissionStatus, AssignmentStatus, Role] = ['draft', 'approved', 'accepted', 'mission_lead'];
-  await owner`
-    WITH org AS (SELECT id FROM organisations WHERE slug = ${own.slug}),
-    mission_lead_user AS (SELECT id FROM users WHERE org_id = (SELECT id FROM org) AND role = ${missionLead} ORDER BY email LIMIT 1),
-    mission AS (
-      INSERT INTO missions (org_id, ref, name, period, status, owner_id, submitted_by, submission_no)
-      SELECT org.id, ${ref}, ${`Sweep ${own.slug} ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, mission_lead_user.id,
-             CASE WHEN ${status} = ${draft} THEN NULL ELSE mission_lead_user.id END, CASE WHEN ${status} = ${draft} THEN 0 ELSE 1 END
-      FROM org, mission_lead_user RETURNING id, org_id, period, owner_id),
-    requirement AS (
-      INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level)
-      SELECT mission.org_id, mission.id, skills.id, ${MIN_LEVEL} FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = ${own.skill}
-      RETURNING id, mission_id)
-    INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-    SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, ${accepted}, mission.owner_id
-    FROM mission JOIN requirement ON requirement.mission_id = mission.id
-    JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.ref = ${parseRef('crew_member', own.crewMember)}
-    WHERE ${status} = ${approved}`;
-  return `MSN-${ref}`;
+function missionIn(own: OwnRecords, status: MissionStatus) {
+  const index = arranged++;
+  return arrangeMission(owner, {
+    org: own.slug,
+    name: `Sweep ${own.slug} ${index}`,
+    period: dayAfter('2031-01-01', index),
+    status,
+    owner: own.missionLead,
+    skill: own.skill,
+    crew: status === 'approved' ? [{ crewMember: own.crewMember, status: 'accepted' }] : [],
+  });
 }
 
 /**
@@ -222,13 +203,13 @@ const ORGANISATIONS = [
   {
     slug: 'artemis',
     director: 'dana@artemis.example',
-    own: { crewMember: 'CRW-2', skill: 'comms', recruit: 'Aster Quill', draft: 'MSN-6', slug: 'artemis' },
+    own: { crewMember: 'CRW-2', skill: 'comms', recruit: 'Aster Quill', draft: 'MSN-6', slug: 'artemis', missionLead: 'sam@artemis.example' },
     otherSlug: 'helios',
   },
   {
     slug: 'helios',
     director: 'ines@helios.example',
-    own: { crewMember: 'CRW-2', skill: 'EVA', recruit: 'Helio Brandt', draft: 'MSN-2', slug: 'helios' },
+    own: { crewMember: 'CRW-2', skill: 'EVA', recruit: 'Helio Brandt', draft: 'MSN-2', slug: 'helios', missionLead: 'farid@helios.example' },
     otherSlug: 'artemis',
   },
 ];

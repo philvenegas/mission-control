@@ -1,12 +1,7 @@
-import {
-  type AssignmentStatus,
-  MIN_LEVEL,
-  MISSION_STATUSES,
-  type MissionStatus,
-  TRANSITIONS as CONTRACT_TRANSITIONS,
-} from '@mission-control/contract';
+import { MISSION_STATUSES, type MissionStatus, parseRef, TRANSITIONS as CONTRACT_TRANSITIONS } from '@mission-control/contract';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { type Caller, loginAs, useSeededApp } from '../../test/app.ts';
+import { arrangeMission, dayAfter } from '../../test/arrange.ts';
 
 const { app, owner } = useSeededApp();
 
@@ -58,59 +53,53 @@ const CASES = MISSION_STATUSES.flatMap((status) =>
   TRANSITIONS.flatMap((transition) => ACTORS.map((actor) => ({ status, transition, actor, expected: expectedAnswer(actor, transition, status) }))),
 );
 
-/** The table's missions are numbered from here, well clear of the seeded ones. */
-const FIRST_REF = 1000;
-const DAY_MS = 86_400_000;
 let callers: Record<Actor, Caller>;
+/** Each case's mission, by the case's index in CASES. */
+const missionRefs: string[] = [];
+const missionFor = (index: number) => {
+  const missionRef = missionRefs[index];
+  if (missionRef === undefined) throw new Error(`No mission was arranged for case ${index}`);
+  return missionRef;
+};
 
 beforeAll(async () => {
-  const [director, missionOwner, otherLead, crewMember] = await Promise.all([
+  const [director, missionOwner, otherMissionLead, crewMember] = await Promise.all([
     loginAs(app, 'artemis', 'dana@artemis.example'),
     loginAs(app, 'artemis', 'sam@artemis.example'),
     loginAs(app, 'artemis', 'priya@artemis.example'),
     loginAs(app, 'artemis', 'ada@artemis.example'),
   ]);
-  callers = { director, owner: missionOwner, 'other mission lead': otherLead, 'crew member': crewMember };
-  // One mission per case, owned by Sam, in its own two days of 2030 so no two hold the same crew
-  // at once. Each meets every guard: a requirement, a future start, and on an approved mission its
-  // slot accepted (by Ben), so only the status and the role decide the answer.
+  callers = { director, owner: missionOwner, 'other mission lead': otherMissionLead, 'crew member': crewMember };
+  // One mission per case, owned by Sam, each on its own day of 2030. Each meets every guard: a
+  // requirement, a future start, and on an approved mission its slot accepted (by Ben, CRW-2), so
+  // only the status and the role decide the answer.
   for (const [index, { status }] of CASES.entries()) {
-    const ref = FIRST_REF + index;
-    const day = new Date(Date.UTC(2030, 0, 1) + index * 2 * DAY_MS).toISOString().slice(0, 10);
-    const [draft, approved, accepted]: [MissionStatus, MissionStatus, AssignmentStatus] = ['draft', 'approved', 'accepted'];
-    await owner`
-      WITH org AS (SELECT id FROM organisations WHERE slug = 'artemis'),
-      sam AS (SELECT id FROM users WHERE email = 'sam@artemis.example'),
-      mission AS (
-        INSERT INTO missions (org_id, ref, name, period, status, owner_id, submitted_by, submission_no)
-        SELECT org.id, ${ref}, ${`Table ${ref}`}, daterange(${day}::date, ${day}::date + 1), ${status}, sam.id,
-               CASE WHEN ${status} = ${draft} THEN NULL ELSE sam.id END, CASE WHEN ${status} = ${draft} THEN 0 ELSE 1 END
-        FROM org, sam RETURNING id, org_id, period, owner_id),
-      requirement AS (
-        INSERT INTO mission_requirements (org_id, mission_id, skill_id, min_level)
-        SELECT mission.org_id, mission.id, skills.id, ${MIN_LEVEL} FROM mission JOIN skills ON skills.org_id = mission.org_id AND skills.name = 'pilot'
-        RETURNING id, mission_id)
-      INSERT INTO assignments (org_id, ref, mission_id, requirement_id, crew_member_id, period, status, created_by)
-      SELECT mission.org_id, ${ref}, mission.id, requirement.id, crew_members.id, mission.period, ${accepted}, mission.owner_id
-      FROM mission JOIN requirement ON requirement.mission_id = mission.id
-      JOIN crew_members ON crew_members.org_id = mission.org_id AND crew_members.name = 'Ben Osei'
-      WHERE ${status} = ${approved}`;
+    missionRefs[index] = await arrangeMission(owner, {
+      org: 'artemis',
+      name: `Table case ${index}`,
+      period: dayAfter('2030-01-01', index),
+      status,
+      owner: 'sam@artemis.example',
+      skill: 'pilot',
+      crew: status === 'approved' ? [{ crewMember: 'CRW-2', status: 'accepted' }] : [],
+    });
   }
 });
 
-async function missionState(ref: number) {
+async function missionState(missionRef: string) {
   const [row] = await owner`
     SELECT m.status, (SELECT count(*)::int FROM mission_events e WHERE e.mission_id = m.id) AS events,
            (SELECT e.type || ' ' || e.from_status || ' ' || e.to_status FROM mission_events e WHERE e.mission_id = m.id) AS event
-    FROM missions m JOIN organisations o ON o.id = m.org_id WHERE o.slug = 'artemis' AND m.ref = ${ref}`;
+    FROM missions m JOIN organisations o ON o.id = m.org_id WHERE o.slug = 'artemis' AND m.ref = ${parseRef('mission', missionRef)}`;
   return row;
 }
 
 describe('every transition, from every status, by every role', () => {
-  it.each(CASES.map((testCase, index) => ({ ...testCase, ref: FIRST_REF + index })))(
+  it.each(CASES.map((testCase, index) => ({ ...testCase, index })))(
     '$actor makes $transition on a $status mission: $expected',
-    async ({ status, transition, actor, expected, ref }) => {
-      const response = await callers[actor].post(`/v1/missions/MSN-${ref}/${transition}`, { note: 'Table test.' });
+    async ({ status, transition, actor, expected, index }) => {
+      const ref = missionFor(index);
+      const response = await callers[actor].post(`/v1/missions/${ref}/${transition}`, { note: 'Table test.' });
       expect(response.status).toBe(expected);
       if (expected === 200) {
         expect(await missionState(ref)).toEqual({ status: TO[transition], events: 1, event: `${transition} ${status} ${TO[transition]}` });
