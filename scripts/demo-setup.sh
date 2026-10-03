@@ -32,4 +32,4 @@ step "5/5 Build"
 pnpm --silent -r --reporter=silent build
 echo "  built"
 
-printf '\nReady. Run the tests with: pnpm test && pnpm test:int\n'
+printf '\nReady. Next: pnpm api, in a terminal of its own, then the walk-through in README.md.\n'

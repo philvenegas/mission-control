@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; steps 1 to 7 are done. The first release, 0.1.0, will be the completed core.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; all eight are done, so the core is complete. The first release, 0.1.0, will be this core; the two stretch steps are not yet built.
 
 ### Added
 
@@ -84,6 +84,10 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `mctl mission show` prints a line per slot, with the crew member, score, status, who chose them and any problem, and who has approved; `mission list` marks every clash; `mission approve` reports progress while more approvals are needed. A successful change prints the likely next command.
 - A score component in a match run now says what it was worked out from: the level held, the days assigned out of the 180 around the start, or the days rested (null for one who has never flown). A nearest miss gives the level they hold the skill at.
 - Integration tests that run the three acts of the walk-through through `mctl`, and check that every command answers with only JSON under `--json`, finding the commands from `mctl`'s own help.
+- The README completed: what the product is, the setup, the three-act walk-through written from a real run, the tests and what each kind proves, a table of what is built, stretch and designed only, and pointers to the design, the glossary and the transcripts.
+- `readme.int.test.ts`: the README's walk-through as an end-to-end test. It runs every command as written, twice, after `pnpm demo:reset` and `pnpm demo:login` each time, and fails if one exits or prints differently from what the README shows.
+- The walk-through test checks the outcomes through `--json` too: the match run choosing Ada as pilot and Quin as medic, the crew held, offered and declined, Mina replacing Quin, the clashing draft refused and then submitted with Ben, and Helios Labs listing only its own missions.
+- `transcripts/`, with a README saying what the AI transcripts are and how they are copied in unedited.
 
 ### Fixed
 
@@ -96,5 +100,6 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 ### Changed
 
 - Coverage thresholds rise to the level now reached: statements and lines 98%, branches 98.5%.
+- `pnpm demo:setup` ends by naming the next step, `pnpm api`, then the README's walk-through.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main
