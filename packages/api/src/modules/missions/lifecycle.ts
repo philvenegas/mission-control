@@ -1,8 +1,8 @@
 import {
   type AssignmentStatus,
   formatRef,
-  LIVE_ASSIGNMENT_STATUSES,
   type MissionStatus,
+  PLACED_ASSIGNMENT_STATUSES,
   ROLES,
   type Transition,
 } from '@mission-control/contract';
@@ -135,7 +135,7 @@ const CANCEL = {
   transition: 'cancel',
   to: 'cancelled',
   needsNote: true,
-  effect: moveCrew(['proposed', ...LIVE_ASSIGNMENT_STATUSES], 'released'),
+  effect: moveCrew(PLACED_ASSIGNMENT_STATUSES, 'released'),
 } as const;
 
 /** The whole lifecycle. A transition not listed here, or from a status not listed, cannot happen. */

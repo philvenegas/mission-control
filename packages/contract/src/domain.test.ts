@@ -4,7 +4,10 @@ import {
   CREW_VISIBLE_ASSIGNMENT_STATUSES,
   DEFAULT_MATCH_WEIGHTS,
   DEFAULT_ORG_SETTINGS,
+  isLiveStatus,
   LIVE_ASSIGNMENT_STATUSES,
+  matchWeightsSchema,
+  PLACED_ASSIGNMENT_STATUSES,
   MISSION_EVENT_TYPES,
   TRANSITIONS,
 } from './domain.ts';
@@ -20,8 +23,20 @@ describe('the shared domain values', () => {
     ]);
   });
 
+  it('places a crew member in a slot by a proposal or a live assignment, and not once declined or released', () => {
+    expect(PLACED_ASSIGNMENT_STATUSES).toEqual(['proposed', 'held', 'offered', 'accepted']);
+    expect(ASSIGNMENT_STATUSES.filter(isLiveStatus)).toEqual(['held', 'offered', 'accepted']);
+  });
+
   it('shows a crew member a mission once they are offered a place, never while they are only held', () => {
     expect(CREW_VISIBLE_ASSIGNMENT_STATUSES).toEqual(['offered', 'accepted']);
+  });
+
+  it('takes match weights as shares: none negative, and not all zero', () => {
+    expect(matchWeightsSchema.safeParse(DEFAULT_MATCH_WEIGHTS).success).toBe(true);
+    expect(matchWeightsSchema.safeParse({ proficiency: 2, workload: 1, rest: 0 }).success).toBe(true);
+    expect(matchWeightsSchema.safeParse({ proficiency: 1, workload: -0.5, rest: 0.5 }).success).toBe(false);
+    expect(matchWeightsSchema.safeParse({ proficiency: 0, workload: 0, rest: 0 }).success).toBe(false);
   });
 
   it('records every transition in a mission\'s history, plus a clash', () => {
