@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; all eight are done, so the core is complete. The first release, 0.1.0, will be this core; the two stretch steps are not yet built.
+Nothing has been released yet. The build follows the eight steps of `DESIGN.md` section 11; all eight are done, so the core is complete. The first release, 0.1.0, will be this core and the first stretch step, row-level security; the second, `--pin` and `--exclude`, is not yet built.
 
 ### Added
 
@@ -16,7 +16,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - pnpm workspace with the `contract`, `matcher` and `api` packages. The `cli` package is created by its own build step.
 - `contract` package: roles, mission and assignment statuses, transitions, mission event types, and organisation settings with their defaults.
 - Postgres 17 in Docker, published on host port 54329, configured from `.env` (copied from `.env.example`).
-- Two database roles: an owner that runs migrations and the seed, and an API role that owns no table, is not a superuser and cannot bypass row-level security. The API role can add to `mission_events` and `mission_approvals` but never change or delete them, and cannot create or delete an organisation.
+- Two database roles: an owner that runs migrations and the seed and bypasses row-level security, and an API role that owns no table, is not a superuser and cannot bypass row-level security. The API role can add to `mission_events` and `mission_approvals` but never change or delete them, and cannot create or delete an organisation.
 - Database schema for all twelve tables. Every table carries `org_id`, and every foreign key between tenant tables starts with `org_id`, so a row cannot reference another organisation's row.
 - Check constraints for every status, role, level, decision and event type, generated from the `contract` package's values.
 - An assignment's foreign keys tie its requirement to its own mission and its period to the mission's period, which follows the mission when a draft's period changes.
@@ -88,6 +88,8 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 - `readme.int.test.ts`: the README's walk-through as an end-to-end test. It runs every command as written, twice, after `pnpm demo:reset` and `pnpm demo:login` each time, and fails if one exits or prints differently from what the README shows.
 - The walk-through test checks the outcomes through `--json` too: the match run choosing Ada as pilot and Quin as medic, the crew held, offered and declined, Mina replacing Quin, the clashing draft refused and then submitted with Ben, and Helios Labs listing only its own missions.
 - `transcripts/`, with a README saying what the AI transcripts are and how they are copied in unedited.
+- Row-level security on all twelve tables: one policy each, `tenant_isolation`, lets a row be read or written only while `app.org_id` names its organisation, so the database refuses another organisation's rows even when a query forgets to filter by `org_id`. It is enabled and forced, so owning a table is no way past it; only a role created with `BYPASSRLS` is. Login still finds a user through its one privileged function.
+- `db/row-level-security.int.test.ts`: every table has the policy, enabled and forced; a direct query as the API role sees only the organisation set, and nothing with none set, in every table; it cannot add, change or delete another organisation's rows; the owner is not a superuser but bypasses the policies.
 
 ### Fixed
 
@@ -101,5 +103,7 @@ Nothing has been released yet. The build follows the eight steps of `DESIGN.md` 
 
 - Coverage thresholds rise to the level now reached: statements and lines 98%, branches 98.5%.
 - `pnpm demo:setup` ends by naming the next step, `pnpm api`, then the README's walk-through.
+- The owner database role is now created, or altered on the next `pnpm demo:setup`, with `BYPASSRLS`, so the seed, test fixtures and the login lookup keep seeing every organisation under forced policies.
+- Two tests of the API role's privileges now set an organisation first, as every request does: with row-level security, the role sees and writes nothing without one.
 
 [Unreleased]: https://github.com/philvenegas/mission-control/commits/main
